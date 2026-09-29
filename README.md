@@ -61,4 +61,4 @@ A list holds twelve works, one per search, and the searches run in parallel:
 
 Only public domain, CC0, and CC BY are kept; Commons files under share-alike licenses are skipped. If more than four in a list resolve to Europe, the extras are replaced from non-European sources. A maze skips any work the three mazes before it already showed. Each maze's lists are requested two mazes ahead, so the pictures are loaded before you arrive. A dead API still leaves eight known CC0 images on the walls, shipped in the client.
 
-A plaque fades in within 2.2 m when the work is near the center of view. It is a live region, so the title is not locked inside the canvas. CC BY plaques include the artist’s name.
+A plaque fades in within 2.2 m when the work is near the center of view. It sits in the bottom-right corner, stays open for four seconds, and then folds into a small "i" button. The button, or the I key while the pointer is locked, opens it again until you close it. Looking away and back at the same work brings back the button, not the full plaque. The text is a live region, so the title is not locked inside the canvas. CC BY plaques include the artist’s name.

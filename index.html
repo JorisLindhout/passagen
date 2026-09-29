@@ -18,7 +18,19 @@
         <p>Walk the corridors and pause when a picture is in front of you.</p>
         <button id="walk" type="button">Walk</button>
       </div>
-      <div id="plaque" aria-live="polite" aria-atomic="true"></div>
+      <div id="plaque">
+        <div id="plaque-text" aria-live="polite" aria-atomic="true"></div>
+        <button
+          id="plaque-toggle"
+          type="button"
+          aria-controls="plaque-text"
+          aria-expanded="false"
+          aria-label="Show label"
+          aria-keyshortcuts="I"
+        >
+          i
+        </button>
+      </div>
       <div id="stick" hidden>
         <div id="knob"></div>
       </div>

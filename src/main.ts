@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { createChain } from "./chain";
 import type { Work } from "./fallback";
 import { createInput } from "./input";
-import { setPlaque } from "./overlay";
+import { createPlaque } from "./overlay";
 import { createWalker, EYE_HEIGHT, stepWalker } from "./walk";
 import { createStage } from "./world";
 
@@ -15,15 +15,23 @@ const gate = document.querySelector("#gate");
 const walkButton = document.querySelector("#walk");
 const stick = document.querySelector("#stick");
 const knob = document.querySelector("#knob");
+const plaqueRoot = document.querySelector("#plaque");
+const plaqueText = document.querySelector("#plaque-text");
+const plaqueToggle = document.querySelector("#plaque-toggle");
 if (
   !(canvas instanceof HTMLCanvasElement) ||
   !(gate instanceof HTMLElement) ||
   !(walkButton instanceof HTMLButtonElement) ||
   !(stick instanceof HTMLElement) ||
-  !(knob instanceof HTMLElement)
+  !(knob instanceof HTMLElement) ||
+  !(plaqueRoot instanceof HTMLElement) ||
+  !(plaqueText instanceof HTMLElement) ||
+  !(plaqueToggle instanceof HTMLButtonElement)
 ) {
   throw new Error("missing view");
 }
+
+const plaque = createPlaque(plaqueRoot, plaqueText, plaqueToggle);
 
 const seed = currentSeed();
 const world = createStage(canvas, mobile);
@@ -120,7 +128,7 @@ function updatePlaque(): void {
   const id = best?.id ?? null;
   if (id === shownId) return;
   shownId = id;
-  setPlaque(best);
+  plaque.set(best);
 }
 
 function startAudio(): void {

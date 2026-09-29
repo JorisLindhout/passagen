@@ -76,23 +76,80 @@ body {
 #plaque {
   position: fixed;
   z-index: 2;
-  left: 50%;
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  width: min(34rem, calc(100% - 2rem));
-  padding: 0.85rem 1rem 0.95rem;
-  background: rgba(243, 240, 234, 0.94);
-  opacity: 0;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
   pointer-events: none;
-  transition: opacity 0.35s ease;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.35s ease,
+    visibility 0s linear 0.35s;
 }
 
 #plaque.show {
   opacity: 1;
+  visibility: visible;
+  transition: opacity 0.35s ease;
+}
+
+#plaque-text {
+  width: min(22rem, calc(100vw - 2rem));
+  box-sizing: border-box;
+  padding: 0.8rem 1rem 0.9rem;
+  background: rgba(243, 240, 234, 0.94);
+  pointer-events: none;
+  transform-origin: bottom right;
+  transform: scale(0.2);
+  opacity: 0;
+  transition:
+    transform 0.35s ease,
+    opacity 0.25s ease;
+}
+
+#plaque.open #plaque-text {
+  transform: none;
+  opacity: 1;
+}
+
+#plaque:not(.open) #plaque-text {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
 }
 
 #plaque p {
   margin: 0.18rem 0;
+}
+
+#plaque-toggle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(44, 41, 38, 0.35);
+  border-radius: 50%;
+  background: rgba(243, 240, 234, 0.9);
+  color: #5e584f;
+  font: italic 1.05rem/1 Georgia, "Times New Roman", serif;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#plaque.open #plaque-toggle {
+  color: #2c2926;
+  border-color: rgba(44, 41, 38, 0.6);
+}
+
+#plaque-toggle:hover {
+  background: rgba(233, 228, 219, 0.95);
+}
+
+#plaque-toggle:focus-visible {
+  outline: 2px solid #2c2926;
+  outline-offset: 2px;
 }
 
 #plaque .artist {
@@ -137,12 +194,6 @@ body {
   background: rgba(44, 41, 38, 0.32);
 }
 
-@media (pointer: coarse) {
-  #plaque {
-    bottom: calc(168px + max(16px, env(safe-area-inset-bottom)));
-  }
-}
-
 @media (pointer: fine) {
   #stick {
     display: none !important;
@@ -150,7 +201,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #plaque {
+  #plaque,
+  #plaque.show,
+  #plaque-text {
     transition: none;
   }
 }

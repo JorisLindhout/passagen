@@ -17,6 +17,7 @@ import { buildChunkView, type ChunkView, type FrameSlot, type Stage } from "./wo
 const BUILD_REACH = 2;
 const KEEP_REACH = 3;
 const AVOID_BEHIND = 3;
+const LIST_LENGTH = 12;
 
 export type Chain = {
   spawn: { x: number; z: number; yaw: number };
@@ -60,16 +61,27 @@ export function createChain(seed: string, stage: Stage, anisotropy: number): Cha
     return plans[k]!;
   };
 
-  /** Twenty frames draw on two lists of twelve, so a maze asks for alpha.2k and alpha.2k+1. */
-  const mazeWorks = (k: number): Promise<Work[]> =>
-    Promise.all([worksFor(`${seed}.${2 * k}`), worksFor(`${seed}.${2 * k + 1}`)]).then(([first, second]) => {
+  /**
+   * Twenty frames draw on two lists of twelve, so a maze asks for alpha.2k and
+   * alpha.2k+1. A hall's extra frames add alpha.2k.1, alpha.2k.2, and so on,
+   * with one list to spare for works the mazes before already showed.
+   */
+  const mazeWorks = (k: number): Promise<Work[]> => {
+    const chunk = plan(k);
+    const names = [`${seed}.${2 * k}`, `${seed}.${2 * k + 1}`];
+    if (chunk.hall) {
+      const needed = Math.ceil(hangSpots(chunk, seed).length / LIST_LENGTH) + 1;
+      for (let extra = 1; names.length < needed; extra++) names.push(`${seed}.${2 * k}.${extra}`);
+    }
+    return Promise.all(names.map(worksFor)).then((lists) => {
       const seen = new Set<string>();
-      return [...first, ...second].filter((work) => {
+      return lists.flat().filter((work) => {
         if (seen.has(work.id)) return false;
         seen.add(work.id);
         return true;
       });
     });
+  };
 
   const build = (k: number) => {
     const chunk = plan(k);

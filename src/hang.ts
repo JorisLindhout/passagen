@@ -1,23 +1,30 @@
-import { CELL, hashSeed, type ChunkPlan } from "./maze";
+import { CELL, hashSeed, inHall, makeRng, type ChunkPlan, type Hall } from "./maze";
 
 export type HangSpot = {
   x: number;
   z: number;
   facing: number;
+  /** 1 in the corridors. A hall hangs larger frames. */
+  scale: number;
 };
 
 export const WORKS_PER_MAZE = 20;
 const FRAME_INSET = 0.04;
 /** Center to center, so two frames never share a cell or crowd a corner. */
 const MIN_GAP = 3.4;
+/** A hall picks one spacing and one frame size for all its walls. */
+const HALL_PITCH_MIN = 2.7;
+const HALL_PITCH_MAX = 4.6;
+const HALL_SCALE_MIN = 1.15;
+const HALL_SCALE_MAX = 1.6;
 
 type Wall = "n" | "s" | "e" | "w";
 
 /** Longest side stays near eye height. Aspect is width / height. */
-export function frameSize(aspect: number): { w: number; h: number } {
+export function frameSize(aspect: number, scale = 1): { w: number; h: number } {
   const safe = Number.isFinite(aspect) && aspect > 0 ? aspect : 0.8;
-  const maxW = 1.2;
-  const maxH = 1.4;
+  const maxW = 1.2 * scale;
+  const maxH = 1.4 * scale;
   let w = maxW;
   let h = w / safe;
   if (h > maxH) {
@@ -32,10 +39,16 @@ export function frameSize(aspect: number): { w: number; h: number } {
  * of each dead end, then the wall a corridor runs into at a turn or a T, seen
  * from the longest approach, then the straight runs, one wall per run, every
  * other cell. The gaps in the outer wall count as floor, so nothing hangs
- * across a passage.
+ * across a passage. A hall's own walls come first and do not count toward
+ * the twenty.
  */
 export function hangSpots(plan: ChunkPlan, seed: string): HangSpot[] {
-  const { size, floor } = plan;
+  const hall = plan.hall ? hallSpots(plan, plan.hall, seed) : [];
+  return [...hall, ...corridorSpots(plan, seed)];
+}
+
+function corridorSpots(plan: ChunkPlan, seed: string): HangSpot[] {
+  const { size, floor, hall } = plan;
   const spots: HangSpot[] = [];
   const full = () => spots.length >= WORKS_PER_MAZE;
   const hash = (key: string) => hashSeed(`${seed}:${plan.index}:${key}`);
@@ -63,7 +76,7 @@ export function hangSpots(plan: ChunkPlan, seed: string): HangSpot[] {
   };
 
   const straightAxis = (x: number, y: number): "h" | "v" | null => {
-    if (!interior(x, y) || !isFloor(x, y)) return null;
+    if (!interior(x, y) || !isFloor(x, y) || inHall(hall, x, y)) return null;
     const near = openings(x, y);
     if (near.length !== 2 || !near[0] || !near[1]) return null;
     if (near[0].dx !== -near[1].dx || near[0].dy !== -near[1].dy) return null;
@@ -74,7 +87,7 @@ export function hangSpots(plan: ChunkPlan, seed: string): HangSpot[] {
   const ends: { x: number; y: number; wall: Wall; approach: number }[] = [];
   for (let y = 1; y < size - 1; y++) {
     for (let x = 1; x < size - 1; x++) {
-      if (!isFloor(x, y)) continue;
+      if (!isFloor(x, y) || inHall(hall, x, y)) continue;
       const near = openings(x, y);
       if (near.length === 1 && near[0]) {
         dead.push({ x, y, wall: facedFrom(near[0].dx, near[0].dy) });
@@ -153,13 +166,52 @@ export function hangSpots(plan: ChunkPlan, seed: string): HangSpot[] {
   return spots;
 }
 
+/**
+ * Each unbroken stretch of hall wall between corners and doorways holds as
+ * many frames as fit at the hall's spacing, evenly spread and centered. A
+ * stretch too short for one stays bare.
+ */
+function hallSpots(plan: ChunkPlan, hall: Hall, seed: string): HangSpot[] {
+  const { size, floor } = plan;
+  const rng = makeRng(`hang:${seed}:${plan.index}`);
+  const pitch = HALL_PITCH_MIN + (HALL_PITCH_MAX - HALL_PITCH_MIN) * rng.next();
+  const scale = HALL_SCALE_MIN + (HALL_SCALE_MAX - HALL_SCALE_MIN) * rng.next();
+  const isWall = (x: number, y: number) =>
+    x < 0 || y < 0 || x >= size || y >= size || floor[y * size + x] !== 1;
+
+  const sides = [
+    { length: hall.w, behind: (i: number) => isWall(hall.x + i, hall.y - 1), start: hall.x, place: (along: number) => ({ x: along, z: hall.y * CELL + FRAME_INSET, facing: 0 }) },
+    { length: hall.w, behind: (i: number) => isWall(hall.x + i, hall.y + hall.h), start: hall.x, place: (along: number) => ({ x: along, z: (hall.y + hall.h) * CELL - FRAME_INSET, facing: Math.PI }) },
+    { length: hall.h, behind: (i: number) => isWall(hall.x - 1, hall.y + i), start: hall.y, place: (along: number) => ({ x: hall.x * CELL + FRAME_INSET, z: along, facing: Math.PI / 2 }) },
+    { length: hall.h, behind: (i: number) => isWall(hall.x + hall.w, hall.y + i), start: hall.y, place: (along: number) => ({ x: (hall.x + hall.w) * CELL - FRAME_INSET, z: along, facing: -Math.PI / 2 }) },
+  ];
+
+  const spots: HangSpot[] = [];
+  for (const side of sides) {
+    let from = -1;
+    for (let i = 0; i <= side.length; i++) {
+      const wall = i < side.length && side.behind(i);
+      if (wall && from < 0) from = i;
+      if (wall || from < 0) continue;
+      const begin = (side.start + from) * CELL;
+      const span = (i - from) * CELL;
+      const count = Math.floor(span / pitch);
+      for (let k = 0; k < count; k++) {
+        spots.push({ ...side.place(begin + (span * (k + 0.5)) / count), scale });
+      }
+      from = -1;
+    }
+  }
+  return spots;
+}
+
 function spotOnWall(x: number, y: number, wall: Wall): HangSpot {
   const cx = (x + 0.5) * CELL;
   const cz = (y + 0.5) * CELL;
-  if (wall === "n") return { x: cx, z: y * CELL + FRAME_INSET, facing: 0 };
-  if (wall === "s") return { x: cx, z: (y + 1) * CELL - FRAME_INSET, facing: Math.PI };
-  if (wall === "w") return { x: x * CELL + FRAME_INSET, z: cz, facing: Math.PI / 2 };
-  return { x: (x + 1) * CELL - FRAME_INSET, z: cz, facing: -Math.PI / 2 };
+  if (wall === "n") return { x: cx, z: y * CELL + FRAME_INSET, facing: 0, scale: 1 };
+  if (wall === "s") return { x: cx, z: (y + 1) * CELL - FRAME_INSET, facing: Math.PI, scale: 1 };
+  if (wall === "w") return { x: x * CELL + FRAME_INSET, z: cz, facing: Math.PI / 2, scale: 1 };
+  return { x: (x + 1) * CELL - FRAME_INSET, z: cz, facing: -Math.PI / 2, scale: 1 };
 }
 
 function pushSpot(spots: HangSpot[], spot: HangSpot, size: number): boolean {

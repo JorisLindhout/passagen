@@ -21,6 +21,16 @@ const EXIT_MIN_SPAN = 12;
 const MAX_LINE = 9;
 const ATTEMPTS = 12;
 
+/** Every few mazes one holds a hall: a large room with a raised ceiling. */
+const HALL_GAP_MIN = 2;
+const HALL_GAP_MAX = 4;
+/** Hall sides in cells, odd so a hall's edges fall on the maze's nodes. */
+const HALL_SIDES = [5, 7, 9, 11];
+const HALL_MIN_AREA = 35;
+const HALL_MAX_AREA = 77;
+const HALL_H_MIN = 4.2;
+const HALL_H_MAX = 5.4;
+
 /** 0 north (−z), 1 east (+x), 2 south (+z), 3 west (−x). */
 export type Side = 0 | 1 | 2 | 3;
 export const SIDE_DX = [0, 1, 0, -1];
@@ -28,6 +38,9 @@ export const SIDE_DY = [-1, 0, 1, 0];
 
 /** A gap in the outer wall, at an odd coordinate along that side. */
 export type Opening = { side: Side; along: number };
+
+/** A rectangle of floor cells, x and y its first cell, w and h in cells, height in meters. */
+export type Hall = { x: number; y: number; w: number; h: number; height: number };
 
 export type ChunkPlan = {
   index: number;
@@ -39,7 +52,29 @@ export type ChunkPlan = {
   exit: Opening;
   /** Local meters. Only the first maze has a spawn. */
   spawn: { x: number; z: number; yaw: number } | null;
+  hall: Hall | null;
 };
+
+export function inHall(hall: Hall | null, x: number, y: number): boolean {
+  return !!hall && x >= hall.x && y >= hall.y && x < hall.x + hall.w && y < hall.y + hall.h;
+}
+
+const hallSchedules = new Map<string, { rng: Rng; at: Set<number>; last: number }>();
+
+/** The first maze never holds a hall. After that, one maze in every two to four does. */
+function holdsHall(seed: string, index: number): boolean {
+  if (index <= 0) return false;
+  let schedule = hallSchedules.get(seed);
+  if (!schedule) {
+    schedule = { rng: makeRng(`halls:${seed}`), at: new Set(), last: 0 };
+    hallSchedules.set(seed, schedule);
+  }
+  while (schedule.last < index) {
+    schedule.last += HALL_GAP_MIN + schedule.rng.int(HALL_GAP_MAX - HALL_GAP_MIN + 1);
+    schedule.at.add(schedule.last);
+  }
+  return schedule.at.has(index);
+}
 
 export type Rng = {
   next(): number;
@@ -102,18 +137,39 @@ export function planChunk(
   bx: number,
   bz: number,
 ): ChunkPlan {
+  if (holdsHall(seed, index)) {
+    const plan = bestChunk(seed, index, entry, bx, bz, true);
+    if (plan) return plan;
+  }
+  return bestChunk(seed, index, entry, bx, bz, false)!;
+}
+
+/**
+ * Keeps the variant with the shortest straight corridor. A hall variant is
+ * dropped when its entry and exit gaps can see each other, since the mazes
+ * beyond both gaps change the moment you step through one of them.
+ */
+function bestChunk(
+  seed: string,
+  index: number,
+  entry: Opening | null,
+  bx: number,
+  bz: number,
+  withHall: boolean,
+): ChunkPlan | null {
   let best: ChunkPlan | null = null;
   let bestLine = Infinity;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    const plan = tryChunk(seed, index, attempt, entry, bx, bz);
-    const line = longestLine(plan.floor, plan.size);
+    const plan = tryChunk(seed, index, attempt, entry, bx, bz, withHall);
+    if (withHall && gapsSeeEachOther(plan)) continue;
+    const line = longestLine(corridors(plan.floor, plan.hall), plan.size);
     if (line < bestLine) {
       best = plan;
       bestLine = line;
     }
     if (line <= MAX_LINE) break;
   }
-  return best!;
+  return best;
 }
 
 function tryChunk(
@@ -123,6 +179,7 @@ function tryChunk(
   entry: Opening | null,
   bx: number,
   bz: number,
+  withHall: boolean,
 ): ChunkPlan {
   const size = CHUNK;
   const rng = makeRng(`maze:${seed}:${index}:${attempt}`);
@@ -132,7 +189,13 @@ function tryChunk(
     : { x: 1 + 2 * rng.int(nodes), y: 1 + 2 * rng.int(nodes) };
 
   const floor = carve(rng, size, start);
-  openDoors(rng, floor, size);
+  let hall: Hall | null = null;
+  if (withHall) {
+    const hallRng = makeRng(`hall:${seed}:${index}:${attempt}`);
+    hall = pickHall(hallRng, size);
+    openHall(hallRng, floor, size, hall);
+  }
+  openDoors(rng, floor, size, hall);
 
   let origin = start;
   let spawn: ChunkPlan["spawn"] = null;
@@ -154,7 +217,160 @@ function tryChunk(
     floor[cell.y * size + cell.x] = 1;
   }
 
-  return { index, bx, bz, size, floor, entry, exit, spawn };
+  return { index, bx, bz, size, floor, entry, exit, spawn, hall };
+}
+
+/** Anywhere inside the outer wall. Larger halls get higher ceilings. */
+function pickHall(rng: Rng, size: number): Hall {
+  let w = 7;
+  let h = 7;
+  for (let guard = 0; guard < 64; guard++) {
+    w = HALL_SIDES[rng.int(HALL_SIDES.length)] ?? 7;
+    h = HALL_SIDES[rng.int(HALL_SIDES.length)] ?? 7;
+    if (w * h >= HALL_MIN_AREA && w * h <= HALL_MAX_AREA) break;
+  }
+  const x = 1 + 2 * rng.int((size - 2 - w) / 2 + 1);
+  const y = 1 + 2 * rng.int((size - 2 - h) / 2 + 1);
+  const grown = (w * h - HALL_MIN_AREA) / (HALL_MAX_AREA - HALL_MIN_AREA);
+  const height = HALL_H_MIN + (HALL_H_MAX - HALL_H_MIN) * (0.7 * grown + 0.3 * rng.next());
+  return { x, y, w, h, height };
+}
+
+/**
+ * Lays the hall over the carved maze. Every corridor that ran through its
+ * area now ends at its wall. Where several reach the hall from the same
+ * stretch of maze, all but one are walled up, so the hall has a few doorways
+ * rather than a ring of them.
+ */
+function openHall(rng: Rng, floor: Uint8Array, size: number, hall: Hall): void {
+  for (let y = hall.y; y < hall.y + hall.h; y++) {
+    for (let x = hall.x; x < hall.x + hall.w; x++) floor[y * size + x] = 1;
+  }
+  const outside = corridors(floor, hall);
+  const region = new Int32Array(size * size).fill(-1);
+  let regions = 0;
+  for (let cell = 0; cell < outside.length; cell++) {
+    if (outside[cell] !== 1 || region[cell] !== -1) continue;
+    const queue = [cell];
+    region[cell] = regions;
+    for (let head = 0; head < queue.length; head++) {
+      const at = queue[head]!;
+      const x = at % size;
+      const y = (at / size) | 0;
+      for (let dir = 0; dir < 4; dir++) {
+        const nx = x + (DX[dir] ?? 0);
+        const ny = y + (DY[dir] ?? 0);
+        if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+        const next = ny * size + nx;
+        if (outside[next] !== 1 || region[next] !== -1) continue;
+        region[next] = regions;
+        queue.push(next);
+      }
+    }
+    regions++;
+  }
+
+  const doorways = new Map<number, number[]>();
+  for (const cell of hallDoorways(floor, size, hall)) {
+    const group = region[cell] ?? -1;
+    const list = doorways.get(group) ?? [];
+    list.push(cell);
+    doorways.set(group, list);
+  }
+  for (const list of doorways.values()) {
+    const keep = rng.int(list.length);
+    list.forEach((cell, i) => {
+      if (i !== keep) floor[cell] = 0;
+    });
+  }
+}
+
+/** Floor cells just outside the hall that open straight into it. */
+export function hallDoorways(floor: Uint8Array, size: number, hall: Hall): number[] {
+  const cells: number[] = [];
+  const add = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < size && y < size && floor[y * size + x] === 1) cells.push(y * size + x);
+  };
+  for (let x = hall.x; x < hall.x + hall.w; x++) {
+    add(x, hall.y - 1);
+    add(x, hall.y + hall.h);
+  }
+  for (let y = hall.y; y < hall.y + hall.h; y++) {
+    add(hall.x - 1, y);
+    add(hall.x + hall.w, y);
+  }
+  return cells;
+}
+
+/** The floor with the hall filled in as wall, for rules meant for corridors. */
+function corridors(floor: Uint8Array, hall: Hall | null): Uint8Array {
+  if (!hall) return floor;
+  const copy = floor.slice();
+  const size = Math.round(Math.sqrt(floor.length));
+  for (let y = hall.y; y < hall.y + hall.h; y++) {
+    for (let x = hall.x; x < hall.x + hall.w; x++) copy[y * size + x] = 0;
+  }
+  return copy;
+}
+
+/**
+ * Casts sight lines between points you can stand on in the entry gap, the
+ * exit gap, and the cell just past each. Anything outside the maze but those
+ * two cells blocks sight.
+ */
+function gapsSeeEachOther(plan: ChunkPlan): boolean {
+  if (!plan.entry) return false;
+  const { size, floor } = plan;
+  const ends = [plan.entry, plan.exit].map((opening) => {
+    const cell = openingCell(opening, size);
+    const beyond = { x: cell.x + (SIDE_DX[opening.side] ?? 0), y: cell.y + (SIDE_DY[opening.side] ?? 0) };
+    return [cell, beyond];
+  });
+  const past = ends.map((pair) => pair[1]!);
+  const solid = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < size && y < size) return floor[y * size + x] !== 1;
+    return !past.some((cell) => cell.x === x && cell.y === y);
+  };
+  const spots = [0.15, 0.5, 0.85];
+  const points = (cells: { x: number; y: number }[]) =>
+    cells.flatMap((cell) => spots.flatMap((fy) => spots.map((fx) => ({ x: cell.x + fx, y: cell.y + fy }))));
+  const from = points(ends[0]!);
+  const to = points(ends[1]!);
+  return from.some((a) => to.some((b) => clearSight(solid, a.x, a.y, b.x, b.y)));
+}
+
+/** Walks the grid cells a segment crosses, in cell units. */
+function clearSight(
+  solid: (x: number, y: number) => boolean,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): boolean {
+  let cx = Math.floor(ax);
+  let cy = Math.floor(ay);
+  const ex = Math.floor(bx);
+  const ey = Math.floor(by);
+  const dx = bx - ax;
+  const dy = by - ay;
+  const sx = Math.sign(dx);
+  const sy = Math.sign(dy);
+  const stepX = dx !== 0 ? Math.abs(1 / dx) : Infinity;
+  const stepY = dy !== 0 ? Math.abs(1 / dy) : Infinity;
+  let nextX = dx > 0 ? (cx + 1 - ax) * stepX : dx < 0 ? (ax - cx) * stepX : Infinity;
+  let nextY = dy > 0 ? (cy + 1 - ay) * stepY : dy < 0 ? (ay - cy) * stepY : Infinity;
+  for (let guard = 0; guard < 256; guard++) {
+    if (solid(cx, cy)) return false;
+    if (cx === ex && cy === ey) return true;
+    if (nextX < nextY) {
+      nextX += stepX;
+      cx += sx;
+    } else {
+      nextY += stepY;
+      cy += sy;
+    }
+  }
+  return true;
 }
 
 /**
@@ -244,9 +460,10 @@ function carve(rng: Rng, size: number, start: { x: number; y: number }): Uint8Ar
 }
 
 /** Opens walls whose two sides are far apart along the corridors, so loops are long. */
-function openDoors(rng: Rng, floor: Uint8Array, size: number): void {
+function openDoors(rng: Rng, floor: Uint8Array, size: number, hall: Hall | null): void {
   const isFloor = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < size && y < size && floor[y * size + x] === 1;
+    x >= 0 && y >= 0 && x < size && y < size && floor[y * size + x] === 1 && !inHall(hall, x, y);
+  const lines = hall ? corridors(floor, hall) : floor;
   const candidates: { x: number; y: number; span: number }[] = [];
   for (let y = 1; y < size - 1; y++) {
     for (let x = 1; x < size - 1; x++) {
@@ -261,9 +478,9 @@ function openDoors(rng: Rng, floor: Uint8Array, size: number): void {
         b = { x, y: y + 1 };
       }
       if (!a || !b) continue;
-      floor[y * size + x] = 1;
-      const line = lineThrough(floor, size, x, y, a.y === y ? 1 : 0, a.y === y ? 0 : 1);
-      floor[y * size + x] = 0;
+      lines[y * size + x] = 1;
+      const line = lineThrough(lines, size, x, y, a.y === y ? 1 : 0, a.y === y ? 0 : 1);
+      lines[y * size + x] = 0;
       if (line > MAX_LINE) continue;
       const span = distances(floor, size, a)[b.y * size + b.x] ?? -1;
       candidates.push({ x, y, span });

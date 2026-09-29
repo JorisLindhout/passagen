@@ -1,10 +1,13 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { frameSize, type HangSpot } from "./hang";
-import { CELL, openingCell, WALL_H, type ChunkPlan, type Opening } from "./maze";
+import { CELL, hallDoorways, inHall, openingCell, WALL_H, type ChunkPlan, type Hall, type Opening } from "./maze";
 import type { Work } from "./fallback";
 
 const HANG_Y = 1.55;
+const MIN_FRAME_BOTTOM = 0.7;
+/** How near a frame the plaque appears, for a frame of ordinary size. */
+const PLAQUE_REACH = 2.2;
 const WALL = 0xf3f0ea;
 const FLOOR = 0xd7d1c5;
 const CEILING = 0xf7f8fa;
@@ -16,6 +19,8 @@ export type FrameSlot = {
   facing: number;
   /** World position of the picture's center. */
   center: THREE.Vector3;
+  /** Meters within which the plaque appears. */
+  reach: number;
   work: Work | null;
   setAspect: (aspect: number) => void;
 };
@@ -46,7 +51,7 @@ const materials = {
     color: WALL,
     roughness: 0.92,
     metalness: 0,
-    aoMap: wallShade(),
+    aoMap: wallShade(WALL_H),
   }),
   floor: new THREE.MeshStandardMaterial({ color: FLOOR, roughness: 0.85, metalness: 0 }),
   ceiling: new THREE.MeshStandardMaterial({
@@ -116,7 +121,10 @@ export function buildChunkView(stage: Stage, plan: ChunkPlan, spots: HangSpot[])
   group.position.set(plan.bx * plan.size * CELL, 0, plan.bz * plan.size * CELL);
 
   const span = plan.size * CELL;
+  const hall = plan.hall;
+  const raise = hall ? hall.height - WALL_H : 0;
   const walls: THREE.BufferGeometry[] = [];
+  const tallWalls: THREE.BufferGeometry[] = [];
   const floors: THREE.BufferGeometry[] = [];
   const ceilings: THREE.BufferGeometry[] = [];
   const panels: THREE.BufferGeometry[] = [];
@@ -125,13 +133,19 @@ export function buildChunkView(stage: Stage, plan: ChunkPlan, spots: HangSpot[])
       const px = (x + 0.5) * CELL;
       const pz = (y + 0.5) * CELL;
       if (plan.floor[y * plan.size + x] === 1) {
+        const lift = inHall(hall, x, y) ? raise : 0;
         floors.push(mazeUv(floorPlane.clone().translate(px, 0, pz), span));
-        ceilings.push(mazeUv(ceilingPlane.clone().translate(px, 0, pz), span));
-        panels.push(panelPlane.clone().translate(px, 0, pz));
+        ceilings.push(mazeUv(ceilingPlane.clone().translate(px, lift, pz), span));
+        panels.push(panelPlane.clone().translate(px, lift, pz));
+      } else if (hall && besideHall(hall, x, y)) {
+        tallWalls.push(new THREE.BoxGeometry(CELL, hall.height, CELL).translate(px, hall.height / 2, pz));
       } else {
         walls.push(wallBox.clone().translate(px, 0, pz));
       }
     }
+  }
+  if (hall) {
+    for (const cell of hallDoorways(plan.floor, plan.size, hall)) tallWalls.push(doorHeader(hall, cell % plan.size, Math.floor(cell / plan.size)));
   }
 
   const shade = floorShade(plan);
@@ -139,14 +153,19 @@ export function buildChunkView(stage: Stage, plan: ChunkPlan, spots: HangSpot[])
   floorMaterial.aoMap = shade;
   const ceilingMaterial = materials.ceiling.clone();
   ceilingMaterial.aoMap = shade;
+  const tallShade = hall ? wallShade(hall.height) : null;
+  const tallMaterial = tallShade ? materials.wall.clone() : null;
+  if (tallMaterial) tallMaterial.aoMap = tallShade;
 
   const owned: THREE.BufferGeometry[] = [];
   for (const [pieces, material] of [
     [walls, materials.wall],
+    [tallWalls, tallMaterial ?? materials.wall],
     [floors, floorMaterial],
     [ceilings, ceilingMaterial],
     [panels, materials.panel],
   ] as const) {
+    if (pieces.length === 0) continue;
     const merged = mergeGeometries(pieces, false);
     for (const piece of pieces) piece.dispose();
     if (!merged) continue;
@@ -181,6 +200,8 @@ export function buildChunkView(stage: Stage, plan: ChunkPlan, spots: HangSpot[])
       shade.dispose();
       floorMaterial.dispose();
       ceilingMaterial.dispose();
+      tallShade?.dispose();
+      tallMaterial?.dispose();
       for (const frame of frames) {
         for (const child of frame.group.children) (child as THREE.Mesh).geometry.dispose();
         frame.material.map?.dispose();
@@ -188,6 +209,25 @@ export function buildChunkView(stage: Stage, plan: ChunkPlan, spots: HangSpot[])
       }
     },
   };
+}
+
+/** A wall cell touching the hall, corners included, rises to the hall's ceiling. */
+function besideHall(hall: Hall, x: number, y: number): boolean {
+  return x >= hall.x - 1 && y >= hall.y - 1 && x <= hall.x + hall.w && y <= hall.y + hall.h;
+}
+
+/** Closes the wall above a doorway, from the corridor ceiling up to the hall's, facing into the hall. */
+function doorHeader(hall: Hall, x: number, y: number): THREE.BufferGeometry {
+  const rise = hall.height - WALL_H;
+  const geometry = new THREE.PlaneGeometry(CELL, rise);
+  const uv = geometry.getAttribute("uv");
+  const base = WALL_H / hall.height;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, base + uv.getY(i) * (1 - base));
+  const mid = WALL_H + rise / 2;
+  if (y < hall.y) return geometry.translate((x + 0.5) * CELL, mid, hall.y * CELL);
+  if (y >= hall.y + hall.h) return geometry.rotateY(Math.PI).translate((x + 0.5) * CELL, mid, (hall.y + hall.h) * CELL);
+  if (x < hall.x) return geometry.rotateY(Math.PI / 2).translate(hall.x * CELL, mid, (y + 0.5) * CELL);
+  return geometry.rotateY(-Math.PI / 2).translate((hall.x + hall.w) * CELL, mid, (y + 0.5) * CELL);
 }
 
 function makeFrame(parent: THREE.Group, spot: HangSpot): FrameSlot {
@@ -204,9 +244,12 @@ function makeFrame(parent: THREE.Group, spot: HangSpot): FrameSlot {
     material,
     facing: spot.facing,
     center: new THREE.Vector3(spot.x, HANG_Y, spot.z).add(parent.position),
+    reach: PLAQUE_REACH * spot.scale,
     work: null,
     setAspect(aspect: number) {
-      buildFrame(group, material, aspect);
+      const y = buildFrame(group, material, aspect, spot.scale);
+      group.position.y = y;
+      slot.center.y = y;
     },
   };
   slot.setAspect(0.8);
@@ -214,10 +257,11 @@ function makeFrame(parent: THREE.Group, spot: HangSpot): FrameSlot {
   return slot;
 }
 
-function buildFrame(group: THREE.Group, pictureMaterial: THREE.Material, aspect: number): void {
+/** Returns the height of the picture's center: eye level, or higher when a large frame would reach too low. */
+function buildFrame(group: THREE.Group, pictureMaterial: THREE.Material, aspect: number, scale: number): number {
   for (const child of group.children) (child as THREE.Mesh).geometry.dispose();
   group.clear();
-  const { w, h } = frameSize(aspect);
+  const { w, h } = frameSize(aspect, scale);
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.16, h + 0.22), materials.frameShadow);
   shadow.position.set(0, -0.07, -0.037);
   group.add(shadow);
@@ -237,6 +281,7 @@ function buildFrame(group: THREE.Group, pictureMaterial: THREE.Material, aspect:
     mesh.position.set(part.x, part.y, 0.01);
     group.add(mesh);
   }
+  return Math.max(HANG_Y, h / 2 + MIN_FRAME_BOTTOM);
 }
 
 /** Floor and ceiling share one shade texture that spans the whole maze. */
@@ -296,8 +341,8 @@ function floorShade(plan: ChunkPlan): THREE.CanvasTexture {
 }
 
 /** Walls darken toward the floor and a touch under the ceiling. v runs 0 at the floor to 1 at the top. */
-function wallShade(): THREE.CanvasTexture {
-  const rows = 128;
+function wallShade(wallHeight: number): THREE.CanvasTexture {
+  const rows = Math.round((128 * wallHeight) / WALL_H);
   const canvas = document.createElement("canvas");
   canvas.width = 1;
   canvas.height = rows;
@@ -306,8 +351,8 @@ function wallShade(): THREE.CanvasTexture {
   if (!context) return texture;
   const image = context.createImageData(1, rows);
   for (let row = 0; row < rows; row++) {
-    const height = (1 - (row + 0.5) / rows) * WALL_H;
-    const light = 1 - 0.34 * Math.exp(-height / 0.5) - 0.08 * Math.exp(-(WALL_H - height) / 0.22);
+    const height = (1 - (row + 0.5) / rows) * wallHeight;
+    const light = 1 - 0.34 * Math.exp(-height / 0.5) - 0.08 * Math.exp(-(wallHeight - height) / 0.22);
     const value = Math.round(light * 255);
     image.data[row * 4] = value;
     image.data[row * 4 + 1] = value;

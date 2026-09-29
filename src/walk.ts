@@ -20,7 +20,10 @@ export type Walker = {
   vz: number;
   yaw: number;
   pitch: number;
+  /** Distance actually covered in the direction you steer; steps and bob follow it. */
   travel: number;
+  /** Smoothed speed of that distance in m/s. */
+  pace: number;
   bob: number;
 };
 
@@ -42,6 +45,7 @@ export function createWalker(spawn: { x: number; z: number; yaw: number }): Walk
     yaw: spawn.yaw,
     pitch: 0,
     travel: 0,
+    pace: 0,
     bob: 0,
   };
 }
@@ -94,6 +98,8 @@ export function stepWalker(
     magnitude = 1;
   }
 
+  let steerX = 0;
+  let steerZ = 0;
   if (magnitude > 0.02) {
     const sin = Math.sin(walker.yaw);
     const cos = Math.cos(walker.yaw);
@@ -101,10 +107,10 @@ export function stepWalker(
     const forwardZ = -cos;
     const rightX = cos;
     const rightZ = -sin;
+    steerX = (forwardX * iz + rightX * ix) / magnitude;
+    steerZ = (forwardZ * iz + rightZ * ix) / magnitude;
     const scale = TOP_SPEED * magnitude;
-    const wishX = (forwardX * iz + rightX * ix) * scale;
-    const wishZ = (forwardZ * iz + rightZ * ix) * scale;
-    approach(walker, wishX, wishZ, ACCEL * dt);
+    approach(walker, steerX * scale, steerZ * scale, ACCEL * dt);
   } else {
     const speed = Math.hypot(walker.vx, walker.vz);
     const drop = BRAKE * dt;
@@ -128,14 +134,20 @@ export function stepWalker(
   const beforeX = walker.x;
   const beforeZ = walker.z;
   const nextX = walker.x + walker.vx * dt;
-  if (!blocked(nextX, walker.z, solid)) walker.x = nextX;
+  if (blocked(nextX, walker.z, solid)) walker.vx = 0;
+  else walker.x = nextX;
   const nextZ = walker.z + walker.vz * dt;
-  if (!blocked(walker.x, nextZ, solid)) walker.z = nextZ;
+  if (blocked(walker.x, nextZ, solid)) walker.vz = 0;
+  else walker.z = nextZ;
 
-  const moved = Math.hypot(walker.x - beforeX, walker.z - beforeZ);
-  if (moved > 0) walker.travel += moved;
+  const dx = walker.x - beforeX;
+  const dz = walker.z - beforeZ;
+  const covered = steerX || steerZ ? Math.max(0, dx * steerX + dz * steerZ) : Math.hypot(dx, dz);
+  walker.travel += covered;
+  walker.pace += (covered / dt - walker.pace) * Math.min(1, dt * 8);
+  if (walker.pace < 0.01) walker.pace = 0;
 
-  const moving = Math.hypot(walker.vx, walker.vz) > 0.05 && moved > 0;
+  const moving = walker.pace > 0.05 && covered > 0;
   if (reducedMotion || !moving) {
     walker.bob += (0 - walker.bob) * Math.min(1, dt * 10);
   } else {

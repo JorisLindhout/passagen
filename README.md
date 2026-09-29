@@ -6,7 +6,7 @@ The shareable URL is `/#/<seed>`. The same seed rebuilds the same chain of corri
 
 Vite and TypeScript, current Three.js, no framework. `@cloudflare/vite-plugin` runs the Worker in development. `wrangler deploy` publishes it. The Vite build is the site. Routes under `/api/` are the Worker. One KV namespace, `ART`, stores the chosen works and their image URLs. One secret, `SMITHSONIAN_API_KEY`, from [api.data.gov](https://api.data.gov/).
 
-The browser never calls a museum. `GET /api/works?seed=<seed>.<n>` returns a list of twelve, with image paths of `/api/image/<id>`. Maze k asks for lists 2k and 2k+1. `GET /api/image/<id>` loads the upstream URL stored in KV. The client cannot pass a URL. JSON and image bytes are cached for seven days.
+The browser never calls a museum. `GET /api/works?seed=<seed>.<n>` returns a list of twelve, with image paths of `/api/image/<id>`. Maze k asks for lists 2k and 2k+1, and a hall also asks for 2k.1, 2k.2, and so on. `GET /api/image/<id>` loads the upstream URL stored in KV. The client cannot pass a URL. JSON and image bytes are cached for seven days.
 
 ## Develop
 
@@ -32,7 +32,9 @@ Wrangler provisions the `ART` namespace when it is not bound to an existing id. 
 
 ## Maze
 
-Each maze is a 15×15 grid of 2.4 m cells, 36 m across, so a corridor is wide enough to stand in front of a picture. Walls are 3.2 m everywhere. There is no courtyard, no colored wings, no map, and nothing marks where one maze ends and the next begins.
+Each maze is a 15×15 grid of 2.4 m cells, 36 m across, so a corridor is wide enough to stand in front of a picture. Corridor walls are 3.2 m. There is no courtyard, no colored wings, no map, and nothing marks where one maze ends and the next begins.
+
+Every two to four mazes, one holds a hall. It is a rectangle from 5×7 to 7×11 cells (12 by 17 m up to 17 by 26 m), with a ceiling between 4.2 and 5.4 m, higher for larger halls. The hall is laid over the carved maze, so every corridor that ran through it now ends at its wall. Where several corridors reach the hall from the same part of the maze, all but one are walled up, which leaves a few doorways. Above each doorway, the wall comes down to the corridor ceiling. The straight-line limit applies only to corridors. A hall variant is dropped if its entry and exit gaps can see each other, because the mazes beyond both gaps change when you step through one.
 
 A maze is carved with MarkovJunior's backtracker, written directly in TypeScript. `RBB=GGR` moves the red head forward two cells. When nothing matches, `RGG=WWR` walks it back along its gray path. Forward steps prefer turns three to one and never go straight a third time. Two walls are opened where their sides are at least 20 cells apart along the corridors, which makes long loops. The seed tries up to twelve variants of each maze and keeps the first whose longest straight line is 9 cells or less, so no view is longer than 21.6 m.
 
@@ -44,9 +46,19 @@ You spawn in a dead end of the first maze, looking down the only opening. Eye he
 
 Light comes from above. Every ceiling cell holds a glowing diffuser panel, and a hemisphere light makes the floor brightest, the walls warm white, and the ceiling a little dimmer. There are no shadow maps. The shadows a museum cannot fully avoid are painted into textures instead: a soft darkening where the walls meet the floor and ceiling, deeper in corners, and a faint shadow below each frame, which stands a few centimeters off the wall.
 
+## Sound
+
+The only sound is your own footsteps, synthesized in the browser from filtered noise. A step is a short, deep, muffled bump: noise kept below about 120 Hz with a low thud under it, lasting a few tens of milliseconds, and a softer second bump 30 ms later as the foot rolls onto the toe. There are eight variations that differ noticeably in timbre and pitch, swaying left and right. One step lands at the low point of each head bob, two a second at full speed, and slower steps are quieter.
+
+At every step the distance to the nearest wall is measured in the four grid directions. Each wall and the ceiling return an echo delayed by its round trip, quieter and duller with distance, and panned to where that wall is relative to your view, so a long corridor ahead sends back a distinct slap. A dark reverb tail follows, mixed between a short, dry one and a long, hollow one by how open the spot is: a dead end sounds close, and a junction or a long view rings on for a second or two.
+
+Every value lives in `DEFAULT_SOUND` in `src/sound.ts`. In development, settings saved under `museum:sound` in local storage override the defaults.
+
 ## Pictures
 
 Each maze hangs twenty frames: the back wall of every dead end, the wall a corridor runs into at a turn or a T, and then the straight runs, one wall per run. Frames stay at least 3.4 m apart.
+
+A hall hangs its own walls on top of the twenty. Each hall picks a spacing between 2.7 and 4.6 m and a frame size 15 to 60% larger than in the corridors. Every stretch of wall between corners and doorways holds as many frames as fit at that spacing, evenly spread. Large frames hang higher so they stay at least 0.7 m off the floor, and their plaque appears from farther away. A hall asks for as many extra lists as its frames need, plus one to spare: `2k.1`, `2k.2`, and so on.
 
 A list holds twelve works, one per search, and the searches run in parallel:
 

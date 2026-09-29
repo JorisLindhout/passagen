@@ -3,7 +3,8 @@ import { createChain } from "./chain";
 import type { Work } from "./fallback";
 import { createInput } from "./input";
 import { createPlaque } from "./overlay";
-import { createWalker, EYE_HEIGHT, stepWalker } from "./walk";
+import { BOB_CYCLE, createWalker, EYE_HEIGHT, stepWalker, TOP_SPEED } from "./walk";
+import { createFootsteps, measureSpace, type SoundSettings } from "./sound";
 import { createStage } from "./world";
 
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -39,9 +40,8 @@ const chain = createChain(seed, world, Math.min(8, world.renderer.capabilities.g
 const walker = createWalker(chain.spawn);
 const input = createInput({ canvas, stick, knob, mobile });
 
-let audio: AudioContext | null = null;
-let noise: AudioBuffer | null = null;
-let stepMark = 0;
+const footsteps = createFootsteps(import.meta.env.DEV ? labSettings() : {});
+let stepCount = 0;
 let shownId: string | null = null;
 let looping = false;
 let last = performance.now();
@@ -50,7 +50,7 @@ const look = new THREE.Vector3();
 new ResizeObserver(() => world.resize()).observe(canvas);
 
 walkButton.addEventListener("click", () => {
-  startAudio();
+  footsteps.start();
   input.setEnabled(true);
   gate.hidden = true;
   if (mobile) stick.hidden = false;
@@ -64,8 +64,10 @@ window.addEventListener("hashchange", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     looping = false;
+    footsteps.suspend();
     return;
   }
+  if (gate.hidden) footsteps.start();
   startLoop();
 });
 
@@ -88,7 +90,6 @@ function frame(now: number): void {
   if (!Number.isFinite(dt) || dt < 0) dt = 0;
   if (dt > 0.05) dt = 0.05;
 
-  const travelBefore = walker.travel;
   stepWalker(walker, input.read(), chain.solid, dt, reducedMotion.matches);
   chain.update(walker.x, walker.z);
   world.camera.position.set(walker.x, EYE_HEIGHT + walker.bob, walker.z);
@@ -96,7 +97,7 @@ function frame(now: number): void {
   world.camera.rotation.x = walker.pitch;
   world.camera.rotation.z = 0;
   updatePlaque();
-  if (walker.travel - travelBefore > 0) footstep(walker.travel);
+  footstep();
   world.renderer.render(world.scene, world.camera);
   requestAnimationFrame(frame);
 }
@@ -113,7 +114,7 @@ function updatePlaque(): void {
     const dy = point.y - world.camera.position.y;
     const dz = point.z - world.camera.position.z;
     const dist = Math.hypot(dx, dy, dz);
-    if (dist > 2.2 || dist < 0.001) continue;
+    if (dist > frameSlot.reach || dist < 0.001) continue;
     const nx = Math.sin(frameSlot.facing);
     const nz = Math.cos(frameSlot.facing);
     const inFront =
@@ -131,36 +132,23 @@ function updatePlaque(): void {
   plaque.set(best);
 }
 
-function startAudio(): void {
-  if (audio) {
-    void audio.resume();
-    return;
-  }
-  audio = new AudioContext();
-  const length = Math.floor(audio.sampleRate * 0.045);
-  noise = audio.createBuffer(1, length, audio.sampleRate);
-  const data = noise.getChannelData(0);
-  for (let i = 0; i < length; i++) {
-    const envelope = 1 - i / length;
-    data[i] = (Math.random() * 2 - 1) * envelope * envelope;
-  }
-  void audio.resume();
+/** One step per bob cycle, landing where the bob is lowest. */
+function footstep(): void {
+  const count = Math.floor(walker.travel / BOB_CYCLE + 0.25);
+  if (count === stepCount) return;
+  stepCount = count;
+  const speed = Math.min(1, walker.pace / TOP_SPEED);
+  footsteps.step(measureSpace(walker.x, walker.z, chain.solid), walker.yaw, speed);
 }
 
-function footstep(travel: number): void {
-  if (!audio || !noise || travel - stepMark < 0.325) return;
-  stepMark = travel;
-  const source = audio.createBufferSource();
-  source.buffer = noise;
-  const filter = audio.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = 260;
-  const gain = audio.createGain();
-  gain.gain.value = 0.03;
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(audio.destination);
-  source.start();
+/** In development, steps use whatever was last set in the local sound lab at /lab/. */
+function labSettings(): Partial<SoundSettings> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem("museum:sound") ?? "null");
+    return saved && typeof saved === "object" ? (saved as Partial<SoundSettings>) : {};
+  } catch {
+    return {};
+  }
 }
 
 function currentSeed(): string {

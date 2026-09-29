@@ -40,6 +40,10 @@ Every maze has an exit on the edge farthest along the corridors from where you c
 
 You spawn in a dead end of the first maze, looking down the only opening. Eye height is 1.6 m, the body radius is 0.32 m, and top speed is 1.3 m/s. There is no jump and no sprint.
 
+## Light
+
+Light comes from above. Every ceiling cell holds a glowing diffuser panel, and a hemisphere light makes the floor brightest, the walls warm white, and the ceiling a little dimmer. There are no shadow maps. The shadows a museum cannot fully avoid are painted into textures instead: a soft darkening where the walls meet the floor and ceiling, deeper in corners, and a faint shadow below each frame, which stands a few centimeters off the wall.
+
 ## Pictures
 
 Twelve works, in quota: three from the Met (different departments), two from the Art Institute of Chicago (different places of origin), two from Cleveland (different departments, dates spread), two from the Smithsonian (different units, CC0 media only), and three from Openverse (`painting`, `print`, `photograph`, different creators, `license=cc0,by`).

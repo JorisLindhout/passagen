@@ -1,0 +1,3 @@
+# Optional key from https://api.data.gov/
+# Without it, the two Smithsonian slots are filled from the Met and the Art Institute of Chicago.
+SMITHSONIAN_API_KEY=

@@ -1,0 +1,156 @@
+:root {
+  color: #2c2926;
+  background: #f3f0ea;
+  font-family: "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  overscroll-behavior: none;
+  background: #f3f0ea;
+}
+
+#app {
+  width: 100%;
+  height: 100dvh;
+  touch-action: none;
+  user-select: none;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+#gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: #f3f0ea;
+  text-align: center;
+}
+
+#gate[hidden] {
+  display: none;
+}
+
+#gate p {
+  margin: 0;
+  max-width: 26rem;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+#walk {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.75rem 1.6rem;
+  border: 1px solid #2c2926;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+#walk:hover {
+  background: rgba(44, 41, 38, 0.06);
+}
+
+#plaque {
+  position: fixed;
+  z-index: 2;
+  left: 50%;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(34rem, calc(100% - 2rem));
+  padding: 0.85rem 1rem 0.95rem;
+  background: rgba(243, 240, 234, 0.94);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+#plaque.show {
+  opacity: 1;
+}
+
+#plaque p {
+  margin: 0.18rem 0;
+}
+
+#plaque .artist {
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+}
+
+#plaque .title {
+  font-size: 1.05rem;
+}
+
+#plaque .meta,
+#plaque .license {
+  font-size: 0.78rem;
+  color: #5e584f;
+}
+
+#stick {
+  position: fixed;
+  z-index: 3;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  background: rgba(44, 41, 38, 0.08);
+  touch-action: none;
+}
+
+#stick[hidden] {
+  display: none;
+}
+
+#knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(44, 41, 38, 0.32);
+}
+
+@media (pointer: coarse) {
+  #plaque {
+    bottom: calc(168px + max(16px, env(safe-area-inset-bottom)));
+  }
+}
+
+@media (pointer: fine) {
+  #stick {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #plaque {
+    transition: none;
+  }
+}

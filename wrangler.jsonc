@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "museum",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "ART"
+    }
+  ],
+  // Optional at runtime. Without it, those two slots go to the Met and Chicago.
+  // Set with `wrangler secret put SMITHSONIAN_API_KEY` or .dev.vars locally.
+  "secrets": {
+    "required": ["SMITHSONIAN_API_KEY"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  }
+}

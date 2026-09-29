@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta
+      name="description"
+      content="A first-person walk through plain corridors hung with public-domain art."
+    />
+    <title>Museum</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+      <div id="gate">
+        <p>Walk the corridors and pause when a picture is in front of you.</p>
+        <button id="walk" type="button">Walk</button>
+      </div>
+      <div id="plaque" aria-live="polite" aria-atomic="true"></div>
+      <div id="stick" hidden>
+        <div id="knob"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

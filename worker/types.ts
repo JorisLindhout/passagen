@@ -1,4 +1,12 @@
-export type SourceName = "met" | "artic" | "cleveland" | "smithsonian" | "openverse";
+export type SourceName =
+  | "met"
+  | "artic"
+  | "cleveland"
+  | "smithsonian"
+  | "openverse"
+  | "smk"
+  | "wellcome"
+  | "commons";
 
 export type LicenseName = "CC0" | "CC BY" | "Public domain";
 
@@ -43,7 +51,7 @@ export type Sampler = { int(max: number): number };
 export function artistKey(name: string): string | null {
   const key = name.trim().toLowerCase().replace(/\s+/g, " ");
   if (!key) return null;
-  if (/^(unknown|anonymous|unidentified|unidentified artist|artist unknown|n\/a|none)$/.test(key)) {
+  if (/^(unknown|anonymous|unidentified|unidentified artist|artist unknown|unknown author|n\/a|none)$/.test(key)) {
     return null;
   }
   return key;

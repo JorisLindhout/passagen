@@ -24,7 +24,7 @@ const RULES: { region: RegionName; pattern: RegExp }[] = [
   {
     region: "europe",
     pattern:
-      /\b(europe|european|france|french|paris|italy|italian|rome|roman|venice|florence|spain|spanish|germany|german|netherlands|dutch|holland|belgium|flemish|flanders|england|english|britain|british|london|scotland|scottish|ireland|irish|austria|austrian|poland|polish|portugal|portuguese|greece|greek|sweden|swedish|norway|denmark|switzerland|hungary|czech|russia|russian|ukraine|finland|provence)\b/i,
+      /\b(europe|european|france|french|paris|italy|italian|rome|roman|venice|florence|spain|spanish|germany|german|netherlands|dutch|holland|belgium|flemish|flanders|england|english|britain|british|london|scotland|scottish|ireland|irish|austria|austrian|poland|polish|portugal|portuguese|greece|greek|sweden|swedish|norway|norwegian|denmark|danish|switzerland|swiss|belgian|hungary|hungarian|czech|russia|russian|ukraine|finland|finnish|provence)\b/i,
   },
 ];
 

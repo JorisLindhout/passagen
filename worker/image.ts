@@ -1,4 +1,4 @@
-import { blockedHostname, CACHE_SECONDS, imageAllowed, USER_AGENT } from "./http";
+import { blockedHostname, CACHE_SECONDS, imageAllowed, userAgentFor } from "./http";
 import { asRecord } from "./types";
 
 const MAX_BYTES = 6_000_000;
@@ -79,7 +79,7 @@ async function fetchAllowed(start: string, thumbHost: string | null, source: str
     }
     const response = await fetch(current, {
       redirect: "manual",
-      headers: { "User-Agent": USER_AGENT, Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
+      headers: { "User-Agent": userAgentFor(current), Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
       signal: AbortSignal.timeout(12_000),
     });
     if (response.status >= 300 && response.status < 400) {

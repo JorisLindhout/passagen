@@ -1,9 +1,12 @@
 import { createGetter } from "./http";
 import { queryArtic } from "./sources/artic";
 import { queryCleveland } from "./sources/cleveland";
+import { COMMONS_ROOMS, queryCommons, type CommonsRoom } from "./sources/commons";
 import { queryMet } from "./sources/met";
 import { queryOpenverse } from "./sources/openverse";
 import { querySmithsonian } from "./sources/smithsonian";
+import { querySmk, type SmkKind } from "./sources/smk";
+import { queryWellcome } from "./sources/wellcome";
 import {
   artistKey,
   aspectOk,
@@ -24,7 +27,22 @@ type Slot =
   | { kind: "artic"; place: string; region: RegionName }
   | { kind: "cleveland"; department: string; region: RegionName; after: number; before: number; type: string }
   | { kind: "smithsonian"; unit: string; region: RegionName }
-  | { kind: "openverse"; query: "painting" | "print" | "photograph" };
+  | { kind: "openverse"; query: "painting" | "print" | "photograph" }
+  | { kind: "smk"; smk: SmkKind }
+  | { kind: "wellcome"; query: string; region: RegionName; pages: number }
+  | { kind: "commons"; room: CommonsRoom };
+
+/** Searches that stay on pictures rather than book pages; pages keeps offsets inside the results. */
+const WELLCOME: { query: string; region: RegionName; pages: number }[] = [
+  { query: "chinese painting", region: "asia", pages: 10 },
+  { query: "indian painting", region: "asia", pages: 10 },
+  { query: "persian", region: "asia", pages: 10 },
+  { query: "japanese woodcut", region: "asia", pages: 2 },
+  { query: "japan", region: "asia", pages: 10 },
+  { query: "mexico", region: "americas", pages: 8 },
+  { query: "watercolour", region: "unknown", pages: 10 },
+  { query: "oil painting", region: "europe", pages: 10 },
+];
 
 const MET_DEPARTMENTS: { id: number; region: RegionName }[] = [
   { id: 11, region: "europe" },
@@ -144,10 +162,14 @@ export async function chooseWorks(seed: string, apiKey: string | undefined): Pro
     return null;
   };
 
-  const slots = buildSlots(rng, key.length > 0);
-  for (const slot of slots) {
+  const slots = rng.shuffle(buildSlots(rng, key.length > 0));
+  const searchesEnd = Date.now() + 13_000;
+  const loaded = await Promise.all(
+    slots.map((slot, index) => beforeDeadline(loadSlot(slot, makeRng(`works:${seed}:${index}`), get, key), searchesEnd)),
+  );
+  for (const list of loaded) {
     if (expired() || works.length >= 12) break;
-    const picked = takeFrom(rng.shuffle(await loadSlot(slot, rng, get, key)), true);
+    const picked = takeFrom(rng.shuffle(list), true);
     if (picked) works.push(picked);
     else {
       const filled = await fillFromAnother(rng, get, key, expired, takeFrom);
@@ -195,14 +217,20 @@ export function toClient(work: WorkDraft): ClientWork {
   };
 }
 
+/**
+ * Twelve searches per list: half from the US museums and Openverse, half from
+ * SMK, Wellcome, and museums across Asia, Latin America, Oceania, and Africa
+ * by way of Wikimedia Commons.
+ */
 function buildSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
-  const metCount = hasSmithsonian ? 3 : 4;
-  const articCount = hasSmithsonian ? 2 : 3;
-  const met = ensureOutside(rng.shuffle(MET_DEPARTMENTS).slice(0, metCount), MET_DEPARTMENTS);
+  const articCount = hasSmithsonian ? 1 : 2;
+  const met = ensureOutside(rng.shuffle(MET_DEPARTMENTS).slice(0, 2), MET_DEPARTMENTS);
   const places = ensureOutside(rng.shuffle(PLACES).slice(0, articCount), PLACES);
-  const cleveland = ensureOutside(rng.shuffle(CLEVELAND).slice(0, 2), CLEVELAND);
+  const cleveland = ensureOutside(rng.shuffle(CLEVELAND).slice(0, 1), CLEVELAND);
   const windows = rng.shuffle(WINDOWS);
-  const units = hasSmithsonian ? rng.shuffle(SMITHSONIAN).slice(0, 2) : [];
+  const units = hasSmithsonian ? rng.shuffle(SMITHSONIAN).slice(0, 1) : [];
+  const wellcome = rng.shuffle(WELLCOME).slice(0, 2);
+  const rooms = rng.shuffle(COMMONS_ROOMS).slice(0, 3);
   const slots: Slot[] = [
     ...met.map((item) => ({ kind: "met" as const, departmentId: item.id, region: item.region })),
     ...places.map((item) => ({ kind: "artic" as const, place: item.place, region: item.region })),
@@ -215,9 +243,10 @@ function buildSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
       type: CLEVELAND_TYPES[index] ?? "Painting",
     })),
     ...units.map((item) => ({ kind: "smithsonian" as const, unit: item.code, region: item.region })),
-    { kind: "openverse", query: "painting" },
-    { kind: "openverse", query: "print" },
-    { kind: "openverse", query: "photograph" },
+    { kind: "openverse", query: rng.pick(["painting", "print", "photograph"] as const) },
+    { kind: "smk", smk: rng.int(3) === 0 ? "any" : "painting" },
+    ...wellcome.map((item) => ({ kind: "wellcome" as const, ...item })),
+    ...rooms.map((room) => ({ kind: "commons" as const, room })),
   ];
   return slots;
 }
@@ -264,6 +293,17 @@ async function loadSlot(slot: Slot, rng: Rng, get: Getter, apiKey: string): Prom
           page: 1 + rng.int(4),
           get,
         });
+      case "smk":
+        return await querySmk({ kind: slot.smk, pick: rng.int(1_000_000) / 1_000_000, get });
+      case "wellcome":
+        return await queryWellcome({
+          query: slot.query,
+          region: slot.region,
+          page: 1 + rng.int(slot.pages),
+          get,
+        });
+      case "commons":
+        return await queryCommons({ room: slot.room, pick: rng.int(1_000_000) / 1_000_000, get });
     }
   } catch (error) {
     console.error(
@@ -310,6 +350,10 @@ function backupSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
       type: rng.pick(CLEVELAND_TYPES),
     },
     { kind: "openverse", query: rng.pick(["painting", "print", "photograph"]) },
+    { kind: "smk", smk: "painting" },
+    { kind: "wellcome", ...rng.pick(WELLCOME) },
+    { kind: "commons", room: rng.pick(COMMONS_ROOMS) },
+    { kind: "commons", room: rng.pick(COMMONS_ROOMS) },
   ];
   if (hasSmithsonian) {
     const unit = rng.pick(SMITHSONIAN);
@@ -325,6 +369,11 @@ async function forcedReplacement(
   expired: () => boolean,
   takeFrom: (list: WorkDraft[], allowEurope: boolean) => WorkDraft | null,
 ): Promise<WorkDraft | null> {
+  for (const room of rng.shuffle(COMMONS_ROOMS).slice(0, 2)) {
+    if (expired()) return null;
+    const picked = takeFrom(rng.shuffle(await loadSlot({ kind: "commons", room }, rng, get, apiKey)), false);
+    if (picked) return picked;
+  }
   const metRegions: Record<number, RegionName> = { 6: "asia", 5: "unknown", 10: "africa", 14: "asia" };
   for (const departmentId of rng.shuffle(FORCED_MET)) {
     if (expired()) return null;
@@ -377,6 +426,11 @@ async function forcedReplacement(
     if (picked) return picked;
   }
   return null;
+}
+
+function beforeDeadline(list: Promise<WorkDraft[]>, deadline: number): Promise<WorkDraft[]> {
+  const wait = Math.max(0, deadline - Date.now());
+  return Promise.race([list, new Promise<WorkDraft[]>((resolve) => setTimeout(() => resolve([]), wait))]);
 }
 
 function ensureOutside<T extends { region: RegionName }>(picked: T[], pool: readonly T[]): T[] {

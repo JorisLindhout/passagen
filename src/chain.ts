@@ -1,4 +1,5 @@
 import { hangWorks, worksFor } from "./art";
+import type { Work } from "./fallback";
 import { hangSpots } from "./hang";
 import {
   CELL,
@@ -59,16 +60,25 @@ export function createChain(seed: string, stage: Stage, anisotropy: number): Cha
     return plans[k]!;
   };
 
-  const worksSeed = (k: number) => `${seed}.${k}`;
+  /** Twenty frames draw on two lists of twelve, so a maze asks for alpha.2k and alpha.2k+1. */
+  const mazeWorks = (k: number): Promise<Work[]> =>
+    Promise.all([worksFor(`${seed}.${2 * k}`), worksFor(`${seed}.${2 * k + 1}`)]).then(([first, second]) => {
+      const seen = new Set<string>();
+      return [...first, ...second].filter((work) => {
+        if (seen.has(work.id)) return false;
+        seen.add(work.id);
+        return true;
+      });
+    });
 
   const build = (k: number) => {
     const chunk = plan(k);
     const view = buildChunkView(stage, chunk, hangSpots(chunk, seed));
     const entry: Built = { view, alive: true };
     built.set(k, entry);
-    const behind: Promise<{ id: string }[]>[] = [];
-    for (let back = 1; back <= AVOID_BEHIND && k - back >= 0; back++) behind.push(worksFor(worksSeed(k - back)));
-    void Promise.all([worksFor(worksSeed(k)), ...behind]).then(([works, ...previous]) => {
+    const behind: Promise<Work[]>[] = [];
+    for (let back = 1; back <= AVOID_BEHIND && k - back >= 0; back++) behind.push(mazeWorks(k - back));
+    void Promise.all([mazeWorks(k), ...behind]).then(([works, ...previous]) => {
       if (!entry.alive) return;
       const avoid = new Set(previous.flat().map((work) => work.id));
       hangWorks({ frames: view.frames, works: works ?? [], avoid, anisotropy, alive: () => entry.alive });

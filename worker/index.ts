@@ -33,7 +33,7 @@ async function handleWorks(url: URL, env: Env, ctx: ExecutionContext): Promise<R
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
-  const kvKey = `works:v1:${seed}`;
+  const kvKey = `works:v2:${seed}`;
   const stored = await env.ART.get(kvKey, "json");
   const fromKv = clientList(stored);
   if (fromKv && fromKv.length >= 12) {

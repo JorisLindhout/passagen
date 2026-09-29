@@ -4,7 +4,7 @@ import type { FrameSlot } from "./world";
 
 const lists = new Map<string, Promise<Work[]>>();
 
-/** One list per maze. An empty answer is not kept, so a later visit asks again. */
+/** One list per seed. An empty answer is not kept, so a later visit asks again. */
 export function worksFor(seed: string): Promise<Work[]> {
   const cached = lists.get(seed);
   if (cached) return cached;

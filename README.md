@@ -1,4 +1,4 @@
-A first-person maze of plain corridors that never ends. The art is the only strong color. The mazes are built in the browser from a seed. A Cloudflare Worker chooses twelve licensed pictures for each maze and caches them.
+A first-person maze of plain corridors that never ends. The art is the only strong color. The mazes are built in the browser from a seed. A Cloudflare Worker chooses licensed pictures from museums around the world and caches them.
 
 The shareable URL is `/#/<seed>`. The same seed rebuilds the same chain of corridors and asks the Worker for the same lists.
 
@@ -6,7 +6,7 @@ The shareable URL is `/#/<seed>`. The same seed rebuilds the same chain of corri
 
 Vite and TypeScript, current Three.js, no framework. `@cloudflare/vite-plugin` runs the Worker in development. `wrangler deploy` publishes it. The Vite build is the site. Routes under `/api/` are the Worker. One KV namespace, `ART`, stores the chosen works and their image URLs. One secret, `SMITHSONIAN_API_KEY`, from [api.data.gov](https://api.data.gov/).
 
-The browser never calls a museum. `GET /api/works?seed=<seed>.<maze>` returns one maze's list, with image paths of `/api/image/<id>`. `GET /api/image/<id>` loads the upstream URL stored in KV. The client cannot pass a URL. JSON and image bytes are cached for seven days.
+The browser never calls a museum. `GET /api/works?seed=<seed>.<n>` returns a list of twelve, with image paths of `/api/image/<id>`. Maze k asks for lists 2k and 2k+1. `GET /api/image/<id>` loads the upstream URL stored in KV. The client cannot pass a URL. JSON and image bytes are cached for seven days.
 
 ## Develop
 
@@ -16,7 +16,7 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-The Smithsonian key is optional. Without it, those two slots are filled from the Met and the Art Institute of Chicago. Put a real key in `.dev.vars` for local development, and set the deployed secret with:
+The Smithsonian key is optional. Without it, that slot is filled from the Art Institute of Chicago. The other sources need no key. Put a real key in `.dev.vars` for local development, and set the deployed secret with:
 
 ```bash
 npx wrangler secret put SMITHSONIAN_API_KEY
@@ -46,8 +46,19 @@ Light comes from above. Every ceiling cell holds a glowing diffuser panel, and a
 
 ## Pictures
 
-Twelve works, in quota: three from the Met (different departments), two from the Art Institute of Chicago (different places of origin), two from Cleveland (different departments, dates spread), two from the Smithsonian (different units, CC0 media only), and three from Openverse (`painting`, `print`, `photograph`, different creators, `license=cc0,by`).
+Each maze hangs twenty frames: the back wall of every dead end, the wall a corridor runs into at a turn or a T, and then the straight runs, one wall per run. Frames stay at least 3.4 m apart.
 
-Only public domain, CC0, and CC BY are kept. If more than four resolve to Europe, the extras are replaced from non-European departments. A maze skips any work the three mazes before it already showed. Each maze's list is requested two mazes ahead, so the pictures are loaded before you arrive. A dead API still leaves eight known CC0 images on the walls, shipped in the client.
+A list holds twelve works, one per search, and the searches run in parallel:
+
+- two from the Met (different departments)
+- one or two from the Art Institute of Chicago (different places of origin)
+- one from Cleveland
+- one from the Smithsonian (CC0 media only, when the key is set)
+- one from Openverse (`license=cc0,by`)
+- one from [SMK](https://open.smk.dk/), the National Gallery of Denmark (public domain, mostly paintings)
+- two from the [Wellcome Collection](https://wellcomecollection.org/) in London (public domain mark, CC0, and CC BY; searches such as Chinese painting, Indian painting, Persian, Japanese woodcut)
+- three from museum collections on [Wikimedia Commons](https://commons.wikimedia.org/): the Tokyo and Kyoto National Museums, the National Palace Museum in Taipei, the National Museum of Korea, the Museu Nacional de Belas Artes in Rio, the Pinacoteca and Museu Paulista in São Paulo, the Museo de Arte de Lima, the Museo Nacional de Colombia, Te Papa in Wellington, the State Library of New South Wales, and Nigerian works in museum collections
+
+Only public domain, CC0, and CC BY are kept; Commons files under share-alike licenses are skipped. If more than four in a list resolve to Europe, the extras are replaced from non-European sources. A maze skips any work the three mazes before it already showed. Each maze's lists are requested two mazes ahead, so the pictures are loaded before you arrive. A dead API still leaves eight known CC0 images on the walls, shipped in the client.
 
 A plaque fades in within 2.2 m when the work is near the center of view. It is a live region, so the title is not locked inside the canvas. CC BY plaques include the artist’s name.

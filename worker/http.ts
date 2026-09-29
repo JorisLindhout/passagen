@@ -1,6 +1,8 @@
 import type { Getter } from "./types";
 
-export const USER_AGENT = "MuseumMaze/1.0 (first-person gallery of public-domain art)";
+const USER_AGENT = "MuseumMaze/1.0 (first-person gallery of public-domain art)";
+/** Wikimedia asks for contact details; the Art Institute's CDN rejects a URL in the agent. */
+const WIKIMEDIA_AGENT = "MuseumMaze/1.0 (https://github.com/JorisLindhout/museum)";
 
 export const CACHE_SECONDS = 60 * 60 * 24 * 7;
 
@@ -9,7 +11,21 @@ const FIXED_HOSTS = new Set([
   "www.artic.edu",
   "openaccess-cdn.clevelandart.org",
   "ids.si.edu",
+  "iip.smk.dk",
+  "api.smk.dk",
+  "iiif.wellcomecollection.org",
+  "upload.wikimedia.org",
+  "thumb.wikimedia.org",
 ]);
+
+export function userAgentFor(url: string): string {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "wikimedia.org" || host.endsWith(".wikimedia.org") ? WIKIMEDIA_AGENT : USER_AGENT;
+  } catch {
+    return USER_AGENT;
+  }
+}
 
 export function createGetter(limit = 40): Getter {
   let count = 0;
@@ -18,7 +34,7 @@ export function createGetter(limit = 40): Getter {
     count += 1;
     const response = await fetch(url, {
       headers: {
-        "User-Agent": USER_AGENT,
+        "User-Agent": userAgentFor(url),
         Accept: "application/json",
       },
       signal: AbortSignal.timeout(12_000),

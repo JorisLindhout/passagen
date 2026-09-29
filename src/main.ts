@@ -8,6 +8,8 @@ import { createFootsteps, measureSpace, type SoundSettings } from "./sound";
 import { createStage } from "./world";
 
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+/** A slow image host should not keep anyone at the door. */
+const LOAD_LIMIT_MS = 15000;
 const mobile = window.matchMedia("(pointer: coarse)").matches;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -19,6 +21,7 @@ const knob = document.querySelector("#knob");
 const plaqueRoot = document.querySelector("#plaque");
 const plaqueText = document.querySelector("#plaque-text");
 const plaqueToggle = document.querySelector("#plaque-toggle");
+const loading = document.querySelector("#loading");
 if (
   !(canvas instanceof HTMLCanvasElement) ||
   !(gate instanceof HTMLElement) ||
@@ -27,7 +30,8 @@ if (
   !(knob instanceof HTMLElement) ||
   !(plaqueRoot instanceof HTMLElement) ||
   !(plaqueText instanceof HTMLElement) ||
-  !(plaqueToggle instanceof HTMLButtonElement)
+  !(plaqueToggle instanceof HTMLButtonElement) ||
+  !(loading instanceof HTMLElement)
 ) {
   throw new Error("missing view");
 }
@@ -36,7 +40,23 @@ const plaque = createPlaque(plaqueRoot, plaqueText, plaqueToggle);
 
 const seed = currentSeed();
 const world = createStage(canvas, mobile);
-const chain = createChain(seed, world, Math.min(8, world.renderer.capabilities.getMaxAnisotropy()));
+const loadingBar = loading.firstElementChild instanceof HTMLElement ? loading.firstElementChild : null;
+const showProgress = (fraction: number) => {
+  if (loadingBar) loadingBar.style.transform = `scaleX(${fraction})`;
+  loading.setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
+};
+const chain = createChain(
+  seed,
+  world,
+  Math.min(8, world.renderer.capabilities.getMaxAnisotropy()),
+  showProgress,
+);
+void Promise.race([chain.ready, new Promise((resolve) => setTimeout(resolve, LOAD_LIMIT_MS))]).then(() => {
+  showProgress(1);
+  loading.classList.add("done");
+  walkButton.disabled = false;
+  walkButton.textContent = "Walk";
+});
 const walker = createWalker(chain.spawn);
 const input = createInput({ canvas, stick, knob, mobile });
 
@@ -53,8 +73,12 @@ walkButton.addEventListener("click", () => {
   footsteps.start();
   input.setEnabled(true);
   gate.hidden = true;
-  if (mobile) stick.hidden = false;
   if (!mobile) void canvas.requestPointerLock();
+});
+
+// iOS interrupts audio on lock or app switch and only lets a gesture resume it.
+window.addEventListener("pointerdown", () => {
+  if (gate.hidden) footsteps.start();
 });
 
 window.addEventListener("hashchange", () => {

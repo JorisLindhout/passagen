@@ -231,11 +231,14 @@ export function createFootsteps(initial: Partial<SoundSettings> = {}): Footsteps
 
   return {
     start() {
+      // Web Audio defaults to "ambient", which the iPhone silent switch mutes.
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session && session.type !== "playback") session.type = "playback";
       if (!ctx) {
         ctx = new AudioContext();
         build(ctx);
       }
-      void ctx.resume();
+      if (ctx.state !== "running") void ctx.resume();
     },
     suspend() {
       void ctx?.suspend();

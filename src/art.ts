@@ -29,8 +29,11 @@ export function hangWorks(options: {
   avoid: Set<string>;
   anisotropy: number;
   alive: () => boolean;
+  /** Called once per frame, when its picture is up or has failed for good. */
+  onSettle?: () => void;
 }): void {
   const { frames, avoid, anisotropy, alive } = options;
+  const settle = options.onSettle ?? (() => {});
   const chosen = options.works.filter((work) => !avoid.has(work.id));
   for (const fallback of FALLBACK_WORKS) {
     if (chosen.length >= frames.length) break;
@@ -41,6 +44,7 @@ export function hangWorks(options: {
   const loader = new THREE.TextureLoader();
   loader.setCrossOrigin("anonymous");
   const apply = (slot: FrameSlot, texture: THREE.Texture) => {
+    settle();
     if (!alive()) {
       texture.dispose();
       return;
@@ -55,7 +59,10 @@ export function hangWorks(options: {
 
   frames.forEach((slot, index) => {
     const work = chosen[index];
-    if (!work) return;
+    if (!work) {
+      settle();
+      return;
+    }
     slot.work = work;
     slot.setAspect(work.aspect);
     loader.load(
@@ -63,12 +70,14 @@ export function hangWorks(options: {
       (texture) => apply(slot, texture),
       undefined,
       () => {
-        if (!alive()) return;
         const fallback = FALLBACK_WORKS[index % FALLBACK_WORKS.length];
-        if (!fallback || fallback.id === work.id) return;
+        if (!alive() || !fallback || fallback.id === work.id) {
+          settle();
+          return;
+        }
         slot.work = fallback;
         slot.setAspect(fallback.aspect);
-        loader.load(fallback.image, (texture) => apply(slot, texture));
+        loader.load(fallback.image, (texture) => apply(slot, texture), undefined, settle);
       },
     );
   });

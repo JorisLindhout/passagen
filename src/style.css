@@ -56,6 +56,18 @@ body {
   line-height: 1.45;
 }
 
+#gate #touch-hint {
+  display: none;
+  font-size: 0.9rem;
+  color: #5e584f;
+}
+
+@media (pointer: coarse) {
+  #gate #touch-hint {
+    display: block;
+  }
+}
+
 #walk {
   min-width: 44px;
   min-height: 44px;
@@ -69,8 +81,36 @@ body {
   cursor: pointer;
 }
 
-#walk:hover {
+#walk:hover:not(:disabled) {
   background: rgba(44, 41, 38, 0.06);
+}
+
+#walk:disabled {
+  border-color: rgba(44, 41, 38, 0.25);
+  color: #8a8379;
+  cursor: default;
+}
+
+#loading {
+  width: 9rem;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(44, 41, 38, 0.12);
+  transition: opacity 0.4s ease;
+}
+
+#loading span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #2c2926;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
+}
+
+#loading.done {
+  opacity: 0;
 }
 
 #plaque {
@@ -169,14 +209,15 @@ body {
 
 #stick {
   position: fixed;
-  z-index: 3;
-  left: max(16px, env(safe-area-inset-left));
-  bottom: max(16px, env(safe-area-inset-bottom));
-  width: 148px;
-  height: 148px;
+  z-index: 1;
+  width: 132px;
+  height: 132px;
+  margin: -66px 0 0 -66px;
+  border: 1px solid rgba(44, 41, 38, 0.18);
   border-radius: 50%;
-  background: rgba(44, 41, 38, 0.08);
-  touch-action: none;
+  box-sizing: border-box;
+  background: rgba(243, 240, 234, 0.18);
+  pointer-events: none;
 }
 
 #stick[hidden] {
@@ -191,7 +232,7 @@ body {
   height: 48px;
   margin: -24px 0 0 -24px;
   border-radius: 50%;
-  background: rgba(44, 41, 38, 0.32);
+  background: rgba(44, 41, 38, 0.3);
 }
 
 @media (pointer: fine) {
@@ -203,7 +244,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   #plaque,
   #plaque.show,
-  #plaque-text {
+  #plaque-text,
+  #loading,
+  #loading span {
     transition: none;
   }
 }

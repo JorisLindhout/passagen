@@ -28,6 +28,8 @@ export function createInput(options: {
   let lookPointer = -1;
   let lastX = 0;
   let lastY = 0;
+  let originX = 0;
+  let originY = 0;
 
   window.addEventListener("keydown", (event) => {
     if (MOVE_KEYS.has(event.code) || TURN_KEYS.has(event.code)) event.preventDefault();
@@ -59,15 +61,60 @@ export function createInput(options: {
     void canvas.requestPointerLock();
   });
 
+  const resetStick = () => {
+    stickId = -1;
+    stickX = 0;
+    stickZ = 0;
+    knob.style.transform = "translate(0px, 0px)";
+    stick.hidden = true;
+  };
+
+  const dragStick = (event: PointerEvent) => {
+    const dx = event.clientX - originX;
+    const dy = event.clientY - originY;
+    const max = stick.offsetWidth * 0.36;
+    const dist = Math.hypot(dx, dy) || 1;
+    const clamped = Math.min(dist, max);
+    const nx = dx / dist;
+    const ny = dy / dist;
+    knob.style.transform = `translate(${nx * clamped}px, ${ny * clamped}px)`;
+    const strength = clamped / max;
+    stickX = deadzone(nx * strength);
+    stickZ = deadzone(-ny * strength);
+  };
+
+  // The first finger down anywhere becomes the walking stick, centred where it
+  // lands so either thumb can use it. A second finger drags to look around.
   canvas.addEventListener("pointerdown", (event) => {
-    if (!enabled || !mobile || event.clientX < window.innerWidth * 0.5) return;
-    looking = true;
-    lookPointer = event.pointerId;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    canvas.setPointerCapture(event.pointerId);
+    if (!enabled || !mobile) return;
+    if (stickId === -1) {
+      stickId = event.pointerId;
+      originX = event.clientX;
+      originY = event.clientY;
+      stick.style.left = `${originX}px`;
+      stick.style.top = `${originY}px`;
+      stick.hidden = false;
+      dragStick(event);
+    } else if (!looking) {
+      looking = true;
+      lookPointer = event.pointerId;
+      lastX = event.clientX;
+      lastY = event.clientY;
+    } else {
+      return;
+    }
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // The pointer id still tracks the drag until pointerup.
+    }
   });
   canvas.addEventListener("pointermove", (event) => {
+    if (event.pointerId === stickId) {
+      event.preventDefault();
+      dragStick(event);
+      return;
+    }
     if (!looking || event.pointerId !== lookPointer) return;
     event.preventDefault();
     lookDx += event.clientX - lastX;
@@ -75,66 +122,17 @@ export function createInput(options: {
     lastX = event.clientX;
     lastY = event.clientY;
   });
-  const endLook = (event: PointerEvent) => {
-    if (event.pointerId !== lookPointer) return;
-    looking = false;
-    lookPointer = -1;
-  };
-  canvas.addEventListener("pointerup", endLook);
-  canvas.addEventListener("pointercancel", endLook);
-
-  const resetStick = () => {
-    stickId = -1;
-    stickX = 0;
-    stickZ = 0;
-    knob.style.transform = "translate(0px, 0px)";
-  };
-
-  const dragStick = (event: PointerEvent) => {
-    const rect = stick.getBoundingClientRect();
-    const dx = event.clientX - (rect.left + rect.width / 2);
-    const dy = event.clientY - (rect.top + rect.height / 2);
-    const max = rect.width * 0.32;
-    const dist = Math.hypot(dx, dy) || 1;
-    const clamped = Math.min(dist, max);
-    const nx = dx / dist;
-    const ny = dy / dist;
-    knob.style.transform = `translate(${nx * clamped}px, ${ny * clamped}px)`;
-    const strength = clamped / max;
-    if (strength < 0.12) {
-      stickX = 0;
-      stickZ = 0;
-      return;
+  const endPointer = (event: PointerEvent) => {
+    if (event.pointerId === stickId) resetStick();
+    if (event.pointerId === lookPointer) {
+      looking = false;
+      lookPointer = -1;
     }
-    stickX = nx * strength;
-    stickZ = -ny * strength;
   };
-
-  stick.addEventListener("pointerdown", (event) => {
-    if (!enabled || !mobile) return;
-    event.preventDefault();
-    event.stopPropagation();
-    stickId = event.pointerId;
-    try {
-      stick.setPointerCapture(event.pointerId);
-    } catch {
-      // The pointer id still tracks the drag until pointerup.
-    }
-    dragStick(event);
-  });
-  stick.addEventListener("pointermove", (event) => {
-    if (event.pointerId !== stickId) return;
-    event.preventDefault();
-    dragStick(event);
-  });
-  const endStick = (event: PointerEvent) => {
-    if (event.pointerId !== stickId) return;
-    resetStick();
-  };
-  stick.addEventListener("pointerup", endStick);
-  stick.addEventListener("pointercancel", endStick);
-  window.addEventListener("pointerup", endStick);
-  window.addEventListener("pointercancel", endStick);
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  window.addEventListener("pointerup", endPointer);
+  window.addEventListener("pointercancel", endPointer);
 
   return {
     setEnabled(next: boolean) {
@@ -152,13 +150,12 @@ export function createInput(options: {
       if (enabled) {
         moveZ = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
         moveX = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-        const stickHeld = mobile && stickId !== -1 && Math.hypot(stickX, stickZ) > 0.05;
-        if (moveX === 0 && moveZ === 0 && stickHeld) {
-          moveX = stickX;
-          moveZ = stickZ;
-        }
         turnX = (keys.has("ArrowRight") ? 1 : 0) - (keys.has("ArrowLeft") ? 1 : 0);
         turnY = (keys.has("ArrowDown") ? 1 : 0) - (keys.has("ArrowUp") ? 1 : 0);
+        if (mobile && stickId !== -1) {
+          if (moveX === 0 && moveZ === 0) moveZ = stickZ;
+          if (turnX === 0) turnX = stickX;
+        }
       } else {
         lookDx = 0;
         lookDy = 0;
@@ -169,4 +166,12 @@ export function createInput(options: {
       return frame;
     },
   };
+}
+
+/** Ignores small drift on one axis so walking straight does not also turn. */
+function deadzone(value: number): number {
+  const dead = 0.2;
+  const size = Math.abs(value);
+  if (size < dead) return 0;
+  return (Math.sign(value) * (size - dead)) / (1 - dead);
 }

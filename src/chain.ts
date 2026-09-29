@@ -24,6 +24,8 @@ export type Chain = {
   solid: (gx: number, gz: number) => boolean;
   update: (x: number, z: number) => void;
   frames: () => FrameSlot[];
+  /** Settles once every picture visible from the spawn is up or has failed. */
+  ready: Promise<void>;
 };
 
 type Built = { view: ChunkView; alive: boolean };
@@ -34,11 +36,28 @@ type Built = { view: ChunkView; alive: boolean };
  * each far end is closed with a wall piece, so a maze appears and disappears
  * only where no line of sight reaches.
  */
-export function createChain(seed: string, stage: Stage, anisotropy: number): Chain {
+export function createChain(
+  seed: string,
+  stage: Stage,
+  anisotropy: number,
+  onProgress?: (fraction: number) => void,
+): Chain {
   const plans: ChunkPlan[] = [];
   const built = new Map<number, Built>();
   const blocks = new Map<string, number>();
   let current = 0;
+  let starting = true;
+  let total = 0;
+  let settled = 0;
+  let markReady = () => {};
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const settle = () => {
+    settled += 1;
+    onProgress?.(Math.min(1, settled / total));
+    if (settled >= total) markReady();
+  };
 
   const plan = (k: number): ChunkPlan => {
     while (plans.length <= k) {
@@ -88,12 +107,21 @@ export function createChain(seed: string, stage: Stage, anisotropy: number): Cha
     const view = buildChunkView(stage, chunk, hangSpots(chunk, seed));
     const entry: Built = { view, alive: true };
     built.set(k, entry);
+    const tracked = starting && visible(k);
+    if (tracked) total += view.frames.length;
     const behind: Promise<Work[]>[] = [];
     for (let back = 1; back <= AVOID_BEHIND && k - back >= 0; back++) behind.push(mazeWorks(k - back));
     void Promise.all([mazeWorks(k), ...behind]).then(([works, ...previous]) => {
       if (!entry.alive) return;
       const avoid = new Set(previous.flat().map((work) => work.id));
-      hangWorks({ frames: view.frames, works: works ?? [], avoid, anisotropy, alive: () => entry.alive });
+      hangWorks({
+        frames: view.frames,
+        works: works ?? [],
+        avoid,
+        anisotropy,
+        alive: () => entry.alive,
+        onSettle: tracked ? settle : undefined,
+      });
     });
   };
 
@@ -157,7 +185,9 @@ export function createChain(seed: string, stage: Stage, anisotropy: number): Cha
   };
 
   sync();
+  starting = false;
+  if (total === 0) markReady();
   const first = plan(0);
   const spawn = first.spawn ?? { x: (first.size * CELL) / 2, z: (first.size * CELL) / 2, yaw: 0 };
-  return { spawn, solid, update, frames };
+  return { spawn, solid, update, frames, ready };
 }

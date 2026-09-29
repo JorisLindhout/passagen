@@ -16,7 +16,18 @@
       <canvas id="view"></canvas>
       <div id="gate">
         <p>Walk the corridors and pause when a picture is in front of you.</p>
-        <button id="walk" type="button">Walk</button>
+        <p id="touch-hint">Drag anywhere with one thumb: up to walk, sideways to turn.</p>
+        <button id="walk" type="button" disabled>Hanging pictures…</button>
+        <div
+          id="loading"
+          role="progressbar"
+          aria-label="Loading pictures"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <span></span>
+        </div>
       </div>
       <div id="plaque">
         <div id="plaque-text" aria-live="polite" aria-atomic="true"></div>

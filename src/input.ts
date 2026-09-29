@@ -23,6 +23,7 @@ export function createInput(options: {
   let lookDy = 0;
   let stickX = 0;
   let stickZ = 0;
+  let stickId = -1;
   let looking = false;
   let lookPointer = -1;
   let lastX = 0;
@@ -39,6 +40,12 @@ export function createInput(options: {
   window.addEventListener("blur", () => {
     keys.clear();
     resetStick();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      keys.clear();
+      resetStick();
+    }
   });
 
   document.addEventListener("mousemove", (event) => {
@@ -77,6 +84,7 @@ export function createInput(options: {
   canvas.addEventListener("pointercancel", endLook);
 
   const resetStick = () => {
+    stickId = -1;
     stickX = 0;
     stickZ = 0;
     knob.style.transform = "translate(0px, 0px)";
@@ -103,23 +111,30 @@ export function createInput(options: {
   };
 
   stick.addEventListener("pointerdown", (event) => {
-    if (!enabled) return;
+    if (!enabled || !mobile) return;
     event.preventDefault();
     event.stopPropagation();
-    stick.setPointerCapture(event.pointerId);
+    stickId = event.pointerId;
+    try {
+      stick.setPointerCapture(event.pointerId);
+    } catch {
+      // The pointer id still tracks the drag until pointerup.
+    }
     dragStick(event);
   });
   stick.addEventListener("pointermove", (event) => {
-    if (!stick.hasPointerCapture(event.pointerId)) return;
+    if (event.pointerId !== stickId) return;
     event.preventDefault();
     dragStick(event);
   });
   const endStick = (event: PointerEvent) => {
-    if (!stick.hasPointerCapture(event.pointerId)) return;
+    if (event.pointerId !== stickId) return;
     resetStick();
   };
   stick.addEventListener("pointerup", endStick);
   stick.addEventListener("pointercancel", endStick);
+  window.addEventListener("pointerup", endStick);
+  window.addEventListener("pointercancel", endStick);
 
   return {
     setEnabled(next: boolean) {
@@ -137,7 +152,8 @@ export function createInput(options: {
       if (enabled) {
         moveZ = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
         moveX = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-        if (Math.hypot(stickX, stickZ) > 0.05) {
+        const stickHeld = mobile && stickId !== -1 && Math.hypot(stickX, stickZ) > 0.05;
+        if (moveX === 0 && moveZ === 0 && stickHeld) {
           moveX = stickX;
           moveZ = stickZ;
         }

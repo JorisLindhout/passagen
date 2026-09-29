@@ -1,11 +1,10 @@
 import * as THREE from "three";
-import { FALLBACK_WORKS, sanitizeWorks, type Work } from "./fallback";
-import { hangSpots } from "./hang";
+import { createChain } from "./chain";
+import type { Work } from "./fallback";
 import { createInput } from "./input";
-import { generateMaze } from "./maze";
 import { setPlaque } from "./overlay";
 import { createWalker, EYE_HEIGHT, stepWalker } from "./walk";
-import { createWorld, type FrameSlot } from "./world";
+import { createStage } from "./world";
 
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const mobile = window.matchMedia("(pointer: coarse)").matches;
@@ -27,10 +26,9 @@ if (
 }
 
 const seed = currentSeed();
-const maze = generateMaze(seed);
-const spots = hangSpots(maze, seed);
-const world = createWorld(canvas, maze, spots, mobile);
-const walker = createWalker(maze.spawn);
+const world = createStage(canvas, mobile);
+const chain = createChain(seed, world, Math.min(8, world.renderer.capabilities.getMaxAnisotropy()));
+const walker = createWalker(chain.spawn);
 const input = createInput({ canvas, stick, knob, mobile });
 
 let audio: AudioContext | null = null;
@@ -42,8 +40,6 @@ let last = performance.now();
 const look = new THREE.Vector3();
 
 new ResizeObserver(() => world.resize()).observe(canvas);
-
-void loadWorks(seed, world.frames);
 
 walkButton.addEventListener("click", () => {
   startAudio();
@@ -85,7 +81,8 @@ function frame(now: number): void {
   if (dt > 0.05) dt = 0.05;
 
   const travelBefore = walker.travel;
-  stepWalker(walker, input.read(), maze.floor, maze.size, dt, reducedMotion.matches);
+  stepWalker(walker, input.read(), chain.solid, dt, reducedMotion.matches);
+  chain.update(walker.x, walker.z);
   world.camera.position.set(walker.x, EYE_HEIGHT + walker.bob, walker.z);
   world.camera.rotation.y = walker.yaw;
   world.camera.rotation.x = walker.pitch;
@@ -100,10 +97,10 @@ function updatePlaque(): void {
   world.camera.getWorldDirection(look);
   let best: Work | null = null;
   let bestDot = 0.9;
-  for (const frameSlot of world.frames) {
+  for (const frameSlot of chain.frames()) {
     const work = frameSlot.work;
     if (!work) continue;
-    const point = frameSlot.group.position;
+    const point = frameSlot.center;
     const dx = point.x - world.camera.position.x;
     const dy = point.y - world.camera.position.y;
     const dz = point.z - world.camera.position.z;
@@ -124,54 +121,6 @@ function updatePlaque(): void {
   if (id === shownId) return;
   shownId = id;
   setPlaque(best);
-}
-
-async function loadWorks(nextSeed: string, frames: FrameSlot[]): Promise<void> {
-  let chosen: Work[] = [];
-  try {
-    const response = await fetch(`/api/works?seed=${encodeURIComponent(nextSeed)}`);
-    if (!response.ok) throw new Error(String(response.status));
-    chosen = sanitizeWorks(await response.json());
-  } catch {
-    chosen = [];
-  }
-  if (chosen.length === 0) chosen = FALLBACK_WORKS.slice();
-  else if (chosen.length < frames.length) {
-    for (const fallback of FALLBACK_WORKS) {
-      if (chosen.length >= frames.length) break;
-      if (chosen.some((work) => work.id === fallback.id)) continue;
-      chosen.push(fallback);
-    }
-  }
-
-  const loader = new THREE.TextureLoader();
-  loader.setCrossOrigin("anonymous");
-  const anisotropy = Math.min(8, world.renderer.capabilities.getMaxAnisotropy());
-  const apply = (frameSlot: FrameSlot, texture: THREE.Texture) => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = anisotropy;
-    frameSlot.material.map = texture;
-    frameSlot.material.color.set(0xffffff);
-    frameSlot.material.needsUpdate = true;
-  };
-  frames.forEach((frameSlot, index) => {
-    const work = chosen[index];
-    if (!work) return;
-    frameSlot.work = work;
-    frameSlot.setAspect(work.aspect);
-    loader.load(
-      work.image,
-      (texture) => apply(frameSlot, texture),
-      undefined,
-      () => {
-        const fallback = FALLBACK_WORKS[index % FALLBACK_WORKS.length];
-        if (!fallback || fallback.id === work.id) return;
-        frameSlot.work = fallback;
-        frameSlot.setAspect(fallback.aspect);
-        loader.load(fallback.image, (texture) => apply(frameSlot, texture));
-      },
-    );
-  });
 }
 
 function startAudio(): void {

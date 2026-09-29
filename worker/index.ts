@@ -3,7 +3,8 @@ import { handleImage } from "./image";
 import { asRecord, type ClientWork } from "./types";
 import { chooseWorks, toClient } from "./works";
 
-const SEED = /^[A-Za-z0-9_-]{1,64}$/;
+/** A shared seed, then the maze's place in the chain: alpha.0, alpha.1, … */
+const SEED = /^[A-Za-z0-9_-]{1,64}(?:\.[0-9]{1,7})?$/;
 const IMAGE_ID = /^[a-z0-9][a-z0-9_-]{0,120}$/;
 
 export default {

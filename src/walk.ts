@@ -46,7 +46,10 @@ export function createWalker(spawn: { x: number; z: number; yaw: number }): Walk
   };
 }
 
-export function blocked(x: number, z: number, floor: Uint8Array, size: number): boolean {
+/** True when the cell at global grid coordinates is wall. Anything unbuilt is wall. */
+export type Solid = (gx: number, gz: number) => boolean;
+
+export function blocked(x: number, z: number, solid: Solid): boolean {
   const radius = BODY_RADIUS;
   const minGX = Math.floor((x - radius) / CELL);
   const maxGX = Math.floor((x + radius - 1e-6) / CELL);
@@ -55,9 +58,7 @@ export function blocked(x: number, z: number, floor: Uint8Array, size: number): 
   const limit = radius * radius - 1e-8;
   for (let gz = minGZ; gz <= maxGZ; gz++) {
     for (let gx = minGX; gx <= maxGX; gx++) {
-      const solid =
-        gx < 0 || gz < 0 || gx >= size || gz >= size || floor[gz * size + gx] !== 1;
-      if (!solid) continue;
+      if (!solid(gx, gz)) continue;
       const nearestX = clamp(x, gx * CELL, (gx + 1) * CELL);
       const nearestZ = clamp(z, gz * CELL, (gz + 1) * CELL);
       const dx = x - nearestX;
@@ -71,8 +72,7 @@ export function blocked(x: number, z: number, floor: Uint8Array, size: number): 
 export function stepWalker(
   walker: Walker,
   input: WalkInput,
-  floor: Uint8Array,
-  size: number,
+  solid: Solid,
   dt: number,
   reducedMotion: boolean,
 ): void {
@@ -128,9 +128,9 @@ export function stepWalker(
   const beforeX = walker.x;
   const beforeZ = walker.z;
   const nextX = walker.x + walker.vx * dt;
-  if (!blocked(nextX, walker.z, floor, size)) walker.x = nextX;
+  if (!blocked(nextX, walker.z, solid)) walker.x = nextX;
   const nextZ = walker.z + walker.vz * dt;
-  if (!blocked(walker.x, nextZ, floor, size)) walker.z = nextZ;
+  if (!blocked(walker.x, nextZ, solid)) walker.z = nextZ;
 
   const moved = Math.hypot(walker.x - beforeX, walker.z - beforeZ);
   if (moved > 0) walker.travel += moved;

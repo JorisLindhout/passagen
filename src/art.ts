@@ -5,13 +5,19 @@ import type { FrameSlot } from "./world";
 
 /** The worker ignores more than this many seen works, so the most recent go. */
 const SEEN_LIMIT = 2000;
+/** The worker refuses a request for more works than this. */
+const COUNT_LIMIT = 72;
 
 /** One maze's works, chosen for this visitor. Any failure leaves the fallback images. */
 export function worksForMaze(request: { count: number; seen: string[]; taste: TasteSummary | null }): Promise<Work[]> {
   return fetch("/api/works", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...request, seen: request.seen.slice(-SEEN_LIMIT) }),
+    body: JSON.stringify({
+      ...request,
+      count: Math.min(request.count, COUNT_LIMIT),
+      seen: request.seen.slice(-SEEN_LIMIT),
+    }),
   })
     .then(async (response) => (response.ok ? sanitizeWorks(await response.json()) : []))
     .catch(() => [] as Work[]);

@@ -1,5 +1,7 @@
 # Passagen
 
+A feed you have to walk through. It learns what you linger on and hangs more of it.
+
 A first-person maze of plain corridors that never ends. The art is the only strong color. The mazes are built in the browser from a seed. A Cloudflare Worker chooses licensed pictures from museums around the world, steered by what the visitor stops to look at, so no two walks hang the same pictures.
 
 The URL is `/#/<seed>`. The same seed rebuilds the same chain of corridors, but the pictures are chosen anew for every visit.

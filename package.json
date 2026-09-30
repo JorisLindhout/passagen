@@ -2,6 +2,7 @@
   "name": "passagen",
   "private": true,
   "version": "1.0.0",
+  "description": "A feed you have to walk through. It learns what you linger on and hangs more of it.",
   "type": "module",
   "scripts": {
     "dev": "vite --host",

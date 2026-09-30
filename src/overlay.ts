@@ -9,9 +9,8 @@ export type Plaque = { set: (work: Work | null) => void };
 /**
  * The label opens when a new work comes into view, then folds into a small
  * button in the corner so it does not sit on the picture. Glancing away and
- * back brings the button, not the label. The button, or the I key while the
- * pointer is locked, opens it again until closed. Only those opens reach
- * `onOpen`.
+ * back brings the button, not the label. The button, or the I key, opens it
+ * again until closed. Only those opens reach `onOpen`.
  */
 export function createPlaque(
   root: HTMLElement,

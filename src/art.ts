@@ -121,8 +121,6 @@ export function hangWorks(options: {
   const next = (index: number): Work =>
     spares.shift() ?? fresh.shift() ?? FALLBACK_WORKS[index % FALLBACK_WORKS.length]!;
 
-  const loader = new THREE.TextureLoader();
-  loader.setCrossOrigin("anonymous");
   const apply = (slot: FrameSlot, texture: THREE.Texture) => {
     settle();
     if (!alive()) {
@@ -155,10 +153,9 @@ export function hangWorks(options: {
     slot.work = work;
     slot.setAspect(work.aspect);
     shown(work);
-    loader.load(
+    loadTexture(
       work.image,
       (texture) => upload(slot, texture),
-      undefined,
       () => {
         if (!alive() || isFallback(work)) {
           settle();
@@ -170,4 +167,18 @@ export function hangWorks(options: {
   };
 
   frames.forEach((slot, index) => hang(slot, chosen[index] ?? next(index), index));
+}
+
+/** The Art Institute's image server refuses a localhost referrer, so no picture sends one. */
+function loadTexture(src: string, onLoad: (texture: THREE.Texture) => void, onError: () => void): void {
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.referrerPolicy = "no-referrer";
+  image.onload = () => {
+    const texture = new THREE.Texture(image);
+    texture.needsUpdate = true;
+    onLoad(texture);
+  };
+  image.onerror = onError;
+  image.src = src;
 }

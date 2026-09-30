@@ -19,6 +19,8 @@ export type Work = {
 };
 
 const API_IMAGE = /^\/api\/image\/[a-z0-9][a-z0-9_-]{0,120}\/[A-Za-z0-9_-]{1,2000}\/[A-Za-z0-9_-]{43}$/;
+/** The Art Institute's images come straight from its IIIF server; the Worker cannot fetch them. */
+const DIRECT_IMAGE = /^https:\/\/www\.artic\.edu\/iiif\/2\/[A-Za-z0-9%_-]{1,200}\/full\/[0-9,!]{1,20}\/0\/default\.jpg$/;
 
 /**
  * Browsers' broken image icons, redrawn as pixel SVGs in public/fallback, hung
@@ -102,7 +104,7 @@ export function sanitizeWorks(value: unknown): Work[] {
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
     const image = typeof record.image === "string" ? record.image : "";
-    if (!API_IMAGE.test(image)) continue;
+    if (!API_IMAGE.test(image) && !DIRECT_IMAGE.test(image)) continue;
     const aspect = typeof record.aspect === "number" ? record.aspect : Number.NaN;
     if (!Number.isFinite(aspect) || aspect < 0.45 || aspect > 2.25) continue;
     const license = typeof record.license === "string" ? record.license : "";

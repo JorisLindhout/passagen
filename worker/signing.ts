@@ -6,9 +6,17 @@ export type SignedImage = { imageUrl: string; thumbHost: string | null; source: 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const keys = new Map<string, Promise<CryptoKey>>();
+/** The Art Institute's CDN refuses requests from Workers but lets any page load its IIIF images. */
+const DIRECT_HOSTS = new Set(["www.artic.edu"]);
+
+/** What the browser loads: the museum's own URL for a direct host, otherwise a path this Worker signed. */
+export async function imageSource(secret: string, work: WorkDraft): Promise<string> {
+  if (DIRECT_HOSTS.has(new URL(work.imageUrl).hostname)) return work.imageUrl;
+  return imagePath(secret, work);
+}
 
 /** `/api/image/<id>/<payload>/<signature>`; the id alone names the picture in the cache. */
-export async function imagePath(secret: string, work: WorkDraft): Promise<string> {
+async function imagePath(secret: string, work: WorkDraft): Promise<string> {
   const payload = toBase64Url(encoder.encode([work.source, work.thumbHost ?? "", work.imageUrl].join("\n")));
   const signature = await crypto.subtle.sign("HMAC", await keyFor(secret), encoder.encode(`${work.id}/${payload}`));
   return `/api/image/${work.id}/${payload}/${toBase64Url(new Uint8Array(signature))}`;

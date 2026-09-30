@@ -1,5 +1,5 @@
 import { handleImage } from "./image";
-import { imagePath } from "./signing";
+import { imageSource } from "./signing";
 import { asRecord, cleanText, type TasteSummary, type TasteWork } from "./types";
 import { chooseMaze, toClient } from "./works";
 
@@ -43,7 +43,7 @@ async function handleWorks(request: Request, env: Env): Promise<Response> {
 
   try {
     const drafts = await chooseMaze({ ...body, env });
-    const works = await Promise.all(drafts.map(async (work) => toClient(work, await imagePath(secret, work))));
+    const works = await Promise.all(drafts.map(async (work) => toClient(work, await imageSource(secret, work))));
     console.log(
       JSON.stringify({
         message: "works selected",

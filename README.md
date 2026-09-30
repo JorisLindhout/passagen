@@ -6,7 +6,7 @@ The URL is `/#/<seed>`. The same seed rebuilds the same chain of corridors, but 
 
 ## Stack
 
-Vite and TypeScript, current Three.js, no framework. `@cloudflare/vite-plugin` runs the Worker in development. `wrangler deploy` publishes it. The Vite build is the site. Routes under `/api/` are the Worker. One KV namespace, `ART`, stores the image URL of every work handed out. One Workers AI binding, `AI`, runs the curator. One secret, `SMITHSONIAN_API_KEY`, from [api.data.gov](https://api.data.gov/). Two variables: `CURATOR` (`on` or `off`) and `CURATOR_MODEL`.
+Vite and TypeScript, current Three.js, no framework. `@cloudflare/vite-plugin` runs the Worker in development. `wrangler deploy` publishes it. The Vite build is the site. Routes under `/api/` are the Worker. One KV namespace, `ART`, stores the image URL of every work handed out. One Workers AI binding, `AI`, runs the curator. One rate limit, `WORKS_LIMIT`, lets each visitor address ask for 30 mazes a minute in each Cloudflare location; past that, `/api/works` answers 429. One secret, `SMITHSONIAN_API_KEY`, from [api.data.gov](https://api.data.gov/). Two variables: `CURATOR` (`on` or `off`) and `CURATOR_MODEL`.
 
 The browser never calls a museum. `POST /api/works` takes `{ count, seen, taste }` and returns one maze's works, with image paths of `/api/image/<id>`. The answer is never cached. `GET /api/image/<id>` loads the upstream URL stored in KV. The client cannot pass a URL. Image bytes are cached for seven days.
 

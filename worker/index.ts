@@ -17,6 +17,8 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/api/works") {
       if (request.method !== "POST") return error("method not allowed", 405);
+      const { success } = await env.WORKS_LIMIT.limit({ key: request.headers.get("cf-connecting-ip") ?? "" });
+      if (!success) return error("too many requests", 429);
       return handleWorks(request, env);
     }
     if (request.method !== "GET") return error("method not allowed", 405);

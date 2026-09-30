@@ -18,6 +18,15 @@
     "binding": "AI",
     "remote": true
   },
+  // Counted per visitor address and per Cloudflare location. A visitor asks for three mazes on arrival
+  // and one per maze walked; many visitors can share one address on mobile and venue networks.
+  "ratelimits": [
+    {
+      "name": "WORKS_LIMIT",
+      "namespace_id": "7301",
+      "simple": { "limit": 30, "period": 60 }
+    }
+  ],
   // CURATOR=off skips the AI and hangs random picks only. .dev.vars overrides both locally.
   "vars": {
     "CURATOR": "on",

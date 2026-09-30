@@ -102,12 +102,11 @@ const WINDOWS = [
   { after: 1950, before: 2020 },
 ];
 
+/** The American Indian museum shares no CC0 images and Cooper Hewitt gives no dimensions, so neither can fill a frame. */
 const SMITHSONIAN: { code: string; region: RegionName }[] = [
   { code: "SAAM", region: "americas" },
   { code: "NMAfA", region: "africa" },
-  { code: "NMAI", region: "americas" },
   { code: "NMAA", region: "asia" },
-  { code: "CHNDM", region: "unknown" },
 ];
 
 const FORCED_MET = [6, 5, 10, 14];
@@ -122,14 +121,24 @@ const FORCED_CLEVELAND = [
   "Korean Art",
   "Oceania",
 ];
-const FORCED_SMITHSONIAN = ["NMAfA", "NMAI", "NMAA"];
+const FORCED_SMITHSONIAN = ["NMAfA", "NMAA"];
 const CLEVELAND_TYPES = ["Painting", "Print", "Photograph"];
+
+const LIST_SIZE = 12;
+/** Spare searches run alongside the twelve, so an empty or stalled one is covered without another round trip. */
+const SPARES = 3;
+/** Most searches are back by now; past it, the list goes out as soon as enough of them have answered. */
+const QUORUM_MS = 3_000;
+/** A search still out after this is left behind. */
+const SEARCH_MS = 5_000;
+const DEADLINE_MS = 10_000;
 
 export async function chooseWorks(seed: string, apiKey: string | undefined): Promise<WorkDraft[]> {
   const key = typeof apiKey === "string" ? apiKey.trim() : "";
   const rng = makeRng(`works:${seed}`);
   const get = createGetter(48);
-  const deadline = Date.now() + 20_000;
+  const start = Date.now();
+  const deadline = start + DEADLINE_MS;
   const expired = () => Date.now() > deadline;
   const usedIds = new Set<string>();
   const usedArtists = new Set<string>();
@@ -163,24 +172,35 @@ export async function chooseWorks(seed: string, apiKey: string | undefined): Pro
   };
 
   const slots = rng.shuffle(buildSlots(rng, key.length > 0));
-  const searchesEnd = Date.now() + 13_000;
-  const loaded = await Promise.all(
-    slots.map((slot, index) => beforeDeadline(loadSlot(slot, makeRng(`works:${seed}:${index}`), get, key), searchesEnd)),
+  const spareSlots = rng.shuffle(backupSlots(rng, key.length > 0)).slice(0, SPARES);
+  const loaded = await gather(
+    [...slots, ...spareSlots].map((slot, index) => loadSlot(slot, makeRng(`works:${seed}:${index}`), get, key)),
+    slots.length,
+    start,
   );
-  for (const list of loaded) {
-    if (expired() || works.length >= 12) break;
-    const picked = takeFrom(rng.shuffle(list), true);
-    if (picked) works.push(picked);
-    else {
-      const filled = await fillFromAnother(rng, get, key, expired, takeFrom);
-      if (filled) works.push(filled);
+  const spares = loaded.slice(slots.length).map((list) => rng.shuffle(list));
+  let nextSpare = 0;
+  const fromSpares = (allowEurope: boolean) => {
+    for (let tried = 0; tried < spares.length; tried++) {
+      const list = spares[(nextSpare + tried) % spares.length] ?? [];
+      const picked = takeFrom(list, allowEurope);
+      if (!picked) continue;
+      nextSpare = (nextSpare + tried + 1) % spares.length;
+      return picked;
     }
+    return null;
+  };
+
+  for (const list of loaded.slice(0, slots.length)) {
+    if (works.length >= LIST_SIZE) break;
+    const picked = takeFrom(rng.shuffle(list), true) ?? fromSpares(true);
+    if (picked) works.push(picked);
   }
 
   let extra = 0;
-  while (works.length < 12 && extra < 4 && !expired()) {
+  while (works.length < LIST_SIZE && extra < 4 && !expired()) {
     extra += 1;
-    const filled = await fillFromAnother(rng, get, key, expired, takeFrom);
+    const filled = await fillFromAnother(rng, get, key, deadline, takeFrom);
     if (!filled) break;
     works.push(filled);
   }
@@ -191,13 +211,48 @@ export async function chooseWorks(seed: string, apiKey: string | undefined): Pro
     if (!current || current.region !== "europe") continue;
     europeSeen += 1;
     if (europeSeen <= 4 || expired()) continue;
-    const replacement = await forcedReplacement(rng, get, key, expired, takeFrom);
+    const replacement = fromSpares(false) ?? (await forcedReplacement(rng, get, key, deadline, takeFrom));
     if (!replacement) continue;
     release(current);
     works[index] = replacement;
   }
 
-  return works.slice(0, 12);
+  return works.slice(0, LIST_SIZE);
+}
+
+/**
+ * Waits for every search, or, once the first `primary` are in or the quorum
+ * time has passed, for enough non-empty answers to fill a list. Searches
+ * still out at the cutoff count as empty.
+ */
+function gather(lists: Promise<WorkDraft[]>[], primary: number, start: number): Promise<WorkDraft[][]> {
+  const results: (WorkDraft[] | null)[] = lists.map(() => null);
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(quorum);
+      clearTimeout(cutoff);
+      resolve(results.map((list) => list ?? []));
+    };
+    const check = () => {
+      if (results.every((list) => list !== null)) return finish();
+      const primaryIn = results.slice(0, primary).every((list) => list !== null);
+      const usable = results.filter((list) => list && list.length > 0).length;
+      if ((primaryIn || Date.now() - start >= QUORUM_MS) && usable >= LIST_SIZE) finish();
+    };
+    lists.forEach((list, index) => {
+      void list
+        .catch(() => [] as WorkDraft[])
+        .then((value) => {
+          results[index] = value;
+          check();
+        });
+    });
+    const quorum = setTimeout(check, Math.max(0, start + QUORUM_MS - Date.now()));
+    const cutoff = setTimeout(finish, Math.max(0, start + SEARCH_MS - Date.now()));
+  });
 }
 
 export function toClient(work: WorkDraft): ClientWork {
@@ -321,13 +376,13 @@ async function fillFromAnother(
   rng: Rng,
   get: Getter,
   apiKey: string,
-  expired: () => boolean,
+  deadline: number,
   takeFrom: (list: WorkDraft[], allowEurope: boolean) => WorkDraft | null,
 ): Promise<WorkDraft | null> {
   const backups = rng.shuffle(backupSlots(rng, apiKey.length > 0)).slice(0, 2);
   for (const slot of backups) {
-    if (expired()) return null;
-    const picked = takeFrom(rng.shuffle(await loadSlot(slot, rng, get, apiKey)), true);
+    if (Date.now() > deadline) return null;
+    const picked = takeFrom(rng.shuffle(await beforeDeadline(loadSlot(slot, rng, get, apiKey), deadline)), true);
     if (picked) return picked;
   }
   return null;
@@ -366,63 +421,42 @@ async function forcedReplacement(
   rng: Rng,
   get: Getter,
   apiKey: string,
-  expired: () => boolean,
+  deadline: number,
   takeFrom: (list: WorkDraft[], allowEurope: boolean) => WorkDraft | null,
 ): Promise<WorkDraft | null> {
-  for (const room of rng.shuffle(COMMONS_ROOMS).slice(0, 2)) {
-    if (expired()) return null;
-    const picked = takeFrom(rng.shuffle(await loadSlot({ kind: "commons", room }, rng, get, apiKey)), false);
-    if (picked) return picked;
-  }
   const metRegions: Record<number, RegionName> = { 6: "asia", 5: "unknown", 10: "africa", 14: "asia" };
-  for (const departmentId of rng.shuffle(FORCED_MET)) {
-    if (expired()) return null;
-    const picked = takeFrom(
-      await loadSlot(
-        { kind: "met", departmentId, region: metRegions[departmentId] ?? "unknown" },
-        rng,
-        get,
-        apiKey,
-      ),
-      false,
-    );
-    if (picked) return picked;
-  }
-  for (const department of rng.shuffle(FORCED_CLEVELAND).slice(0, 3)) {
-    if (expired()) return null;
-    const prior = CLEVELAND.find((item) => item.name === department);
-    const window = rng.pick(WINDOWS);
-    const picked = takeFrom(
-      await loadSlot(
-        {
-          kind: "cleveland",
+  const candidates: Slot[] = [
+    ...rng.shuffle(COMMONS_ROOMS)
+      .slice(0, 2)
+      .map((room) => ({ kind: "commons" as const, room })),
+    ...rng.shuffle(FORCED_MET).map((departmentId) => ({
+      kind: "met" as const,
+      departmentId,
+      region: metRegions[departmentId] ?? "unknown",
+    })),
+    ...rng.shuffle(FORCED_CLEVELAND)
+      .slice(0, 3)
+      .map((department) => {
+        const window = rng.pick(WINDOWS);
+        return {
+          kind: "cleveland" as const,
           department,
-          region: prior?.region ?? "unknown",
+          region: CLEVELAND.find((item) => item.name === department)?.region ?? "unknown",
           after: window.after,
           before: window.before,
           type: "Painting",
-        },
-        rng,
-        get,
-        apiKey,
-      ),
-      false,
-    );
-    if (picked) return picked;
-  }
-  if (!apiKey) return null;
-  for (const unit of FORCED_SMITHSONIAN) {
-    if (expired()) return null;
-    const prior = SMITHSONIAN.find((item) => item.code === unit);
-    const picked = takeFrom(
-      await loadSlot(
-        { kind: "smithsonian", unit, region: prior?.region ?? "unknown" },
-        rng,
-        get,
-        apiKey,
-      ),
-      false,
-    );
+        };
+      }),
+    ...(apiKey ? FORCED_SMITHSONIAN : []).map((unit) => ({
+      kind: "smithsonian" as const,
+      unit,
+      region: SMITHSONIAN.find((item) => item.code === unit)?.region ?? "unknown",
+    })),
+  ];
+  for (const slot of candidates) {
+    if (Date.now() > deadline) return null;
+    const list = await beforeDeadline(loadSlot(slot, rng, get, apiKey), deadline);
+    const picked = takeFrom(slot.kind === "commons" ? rng.shuffle(list) : list, false);
     if (picked) return picked;
   }
   return null;

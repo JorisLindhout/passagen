@@ -1,4 +1,4 @@
-import { aspectFromDimensions, imageAllowed } from "../http";
+import { aspectFromDimensions, aspectFromPair, imageAllowed } from "../http";
 import { combineRegion } from "../region";
 import { asRecord, aspectOk, cleanText, httpUrl, type Getter, type RegionName, type WorkDraft } from "../types";
 
@@ -48,7 +48,7 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
   let imageUrl = "";
   let aspect: number | null = null;
   const dimensions = labeled(freetext?.physicalDescription, "Dimensions");
-  aspect = dimensions ? aspectFromDimensions(dimensions) : null;
+  aspect = dimensions ? (flatAspect(dimensions) ?? aspectFromDimensions(dimensions)) : null;
   for (const item of media) {
     if (cleanText(asRecord(item.usage)?.access) !== "CC0") continue;
     const candidate = screenUrl(item) || httpUrl(item.content);
@@ -82,6 +82,25 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
     thumbHost: null,
     region: combineRegion(region, `${culture} ${dataSource}`),
   };
+}
+
+/**
+ * The African and Asian art museums write "H x W (image): 161.9 x 86.9 cm".
+ * A depth is allowed only when it is thin, so a photograph of a bowl or a
+ * mask does not get stretched to the object's outline.
+ */
+function flatAspect(text: string): number | null {
+  const match = text.match(
+    /H\s*[x×]\s*W(\s*[x×]\s*D)?[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(?:\s*[x×]\s*(\d+(?:\.\d+)?))?\s*cm/i,
+  );
+  if (!match) return null;
+  const height = Number(match[2]);
+  const width = Number(match[3]);
+  if (match[1]) {
+    const depth = Number(match[4]);
+    if (!Number.isFinite(depth) || depth > 0.1 * Math.min(height, width)) return null;
+  }
+  return aspectFromPair(height, width);
 }
 
 function mediaList(descriptive: Record<string, unknown> | null): Record<string, unknown>[] {

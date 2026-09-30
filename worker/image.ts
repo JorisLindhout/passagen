@@ -2,12 +2,22 @@ import { blockedHostname, CACHE_SECONDS, imageAllowed, userAgentFor } from "./ht
 import { asRecord } from "./types";
 
 const MAX_BYTES = 6_000_000;
+/** The browser hangs a fallback after this; the fetch goes on in the background so the next visit finds it cached. */
+const ANSWER_MS = 4_000;
+const FETCH_MS = 25_000;
+/** A host that refused an image is not asked again for a while. */
+const REFUSED_SECONDS = 60 * 60;
 
 type StoredImage = {
   imageUrl: string;
   thumbHost: string | null;
   source: string;
 };
+
+type Loaded =
+  | { ok: true; bytes: Uint8Array; type: string }
+  /** `lasting` marks an answer the host will give again, not a timeout or a dropped connection. */
+  | { ok: false; lasting: boolean };
 
 export async function handleImage(
   request: Request,
@@ -25,9 +35,49 @@ export async function handleImage(
     return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
   }
 
-  let upstream: Response;
+  const loading = loadImage(record, id);
+  ctx.waitUntil(
+    loading.then(async (loaded) => {
+      if (loaded.ok || loaded.lasting) await caches.default.put(cacheKey, toResponse(loaded));
+    }),
+  );
+  const loaded = await Promise.race([
+    loading,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ANSWER_MS)),
+  ]);
+  if (loaded) return toResponse(loaded);
+  console.error(JSON.stringify({ message: "image slow", id }));
+  return new Response(null, { status: 504, headers: { "cache-control": "no-store" } });
+}
+
+function toResponse(loaded: Loaded): Response {
+  if (!loaded.ok) {
+    if (!loaded.lasting) return new Response(null, { status: 502, headers: { "cache-control": "no-store" } });
+    return new Response(null, { status: 404, headers: { "cache-control": `public, max-age=${REFUSED_SECONDS}` } });
+  }
+  return new Response(loaded.bytes, {
+    headers: {
+      "content-type": loaded.type,
+      "cache-control": `public, max-age=${CACHE_SECONDS}`,
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+async function loadImage(record: StoredImage, id: string): Promise<Loaded> {
   try {
-    upstream = await fetchAllowed(record.imageUrl, record.thumbHost, record.source);
+    const upstream = await fetchAllowed(record.imageUrl, record.thumbHost, record.source, AbortSignal.timeout(FETCH_MS));
+    if (!upstream.ok || !upstream.body) {
+      console.error(JSON.stringify({ message: "image upstream failed", id, status: upstream.status }));
+      return { ok: false, lasting: refusal(upstream.status) };
+    }
+    const declared = Number(upstream.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > MAX_BYTES) return { ok: false, lasting: true };
+    const bytes = await readLimited(upstream);
+    if (!bytes) return { ok: false, lasting: true };
+    const type = imageType(upstream.headers.get("content-type"), bytes);
+    if (!type) return { ok: false, lasting: true };
+    return { ok: true, bytes, type };
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -36,32 +86,13 @@ export async function handleImage(
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    return new Response(null, { status: 502, headers: { "cache-control": "no-store" } });
+    return { ok: false, lasting: false };
   }
-  if (!upstream.ok || !upstream.body) {
-    console.error(JSON.stringify({ message: "image upstream failed", id, status: upstream.status }));
-    return new Response(null, { status: 502, headers: { "cache-control": "no-store" } });
-  }
+}
 
-  const declared = Number(upstream.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BYTES) {
-    return new Response(null, { status: 502, headers: { "cache-control": "no-store" } });
-  }
-
-  const bytes = await readLimited(upstream);
-  if (!bytes) return new Response(null, { status: 502, headers: { "cache-control": "no-store" } });
-  const type = imageType(upstream.headers.get("content-type"), bytes);
-  if (!type) return new Response(null, { status: 502, headers: { "cache-control": "no-store" } });
-
-  const response = new Response(bytes, {
-    headers: {
-      "content-type": type,
-      "cache-control": `public, max-age=${CACHE_SECONDS}`,
-      "x-content-type-options": "nosniff",
-    },
-  });
-  ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
-  return response;
+/** Client errors other than a timeout or rate limit will come back the same next time. */
+function refusal(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
 function readRecord(value: Record<string, unknown> | null): StoredImage | null {
@@ -71,7 +102,12 @@ function readRecord(value: Record<string, unknown> | null): StoredImage | null {
   return { imageUrl: value.imageUrl, thumbHost, source: value.source };
 }
 
-async function fetchAllowed(start: string, thumbHost: string | null, source: string): Promise<Response> {
+async function fetchAllowed(
+  start: string,
+  thumbHost: string | null,
+  source: string,
+  signal: AbortSignal,
+): Promise<Response> {
   let current = start;
   for (let hop = 0; hop < 3; hop++) {
     if (!imageAllowed(current, thumbHost, source)) {
@@ -80,7 +116,7 @@ async function fetchAllowed(start: string, thumbHost: string | null, source: str
     const response = await fetch(current, {
       redirect: "manual",
       headers: { "User-Agent": userAgentFor(current), Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
-      signal: AbortSignal.timeout(12_000),
+      signal,
     });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");

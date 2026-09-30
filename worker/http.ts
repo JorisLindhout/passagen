@@ -5,6 +5,8 @@ const USER_AGENT = "MuseumMaze/1.0 (first-person gallery of public-domain art)";
 const WIKIMEDIA_AGENT = "MuseumMaze/1.0 (https://github.com/JorisLindhout/museum)";
 
 export const CACHE_SECONDS = 60 * 60 * 24 * 7;
+/** A Worker holds six connections at once, so one stalled search keeps the rest waiting in line. */
+const SEARCH_TIMEOUT_MS = 5_000;
 
 const FIXED_HOSTS = new Set([
   "images.metmuseum.org",
@@ -37,7 +39,7 @@ export function createGetter(limit = 40): Getter {
         "User-Agent": userAgentFor(url),
         Accept: "application/json",
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();

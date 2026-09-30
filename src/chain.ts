@@ -18,6 +18,7 @@ const BUILD_REACH = 2;
 const KEEP_REACH = 3;
 const AVOID_BEHIND = 3;
 const LIST_LENGTH = 12;
+const OPENING_WAIT_MS = 15000;
 
 export type Chain = {
   spawn: { x: number; z: number; yaw: number };
@@ -53,6 +54,8 @@ export function createChain(
   const ready = new Promise<void>((resolve) => {
     markReady = resolve;
   });
+  /** Mazes out of view at the start wait for the ones in view, so their searches and pictures do not compete. */
+  const opened = Promise.race([ready, new Promise<void>((resolve) => setTimeout(resolve, OPENING_WAIT_MS))]);
   const settle = () => {
     settled += 1;
     onProgress?.(Math.min(1, settled / total));
@@ -109,9 +112,13 @@ export function createChain(
     built.set(k, entry);
     const tracked = starting && visible(k);
     if (tracked) total += view.frames.length;
-    const behind: Promise<Work[]>[] = [];
-    for (let back = 1; back <= AVOID_BEHIND && k - back >= 0; back++) behind.push(mazeWorks(k - back));
-    void Promise.all([mazeWorks(k), ...behind]).then(([works, ...previous]) => {
+    const turn = starting && !tracked ? opened : Promise.resolve();
+    const lists = turn.then(() => {
+      const behind: Promise<Work[]>[] = [];
+      for (let back = 1; back <= AVOID_BEHIND && k - back >= 0; back++) behind.push(mazeWorks(k - back));
+      return Promise.all([mazeWorks(k), ...behind]);
+    });
+    void lists.then(([works, ...previous]) => {
       if (!entry.alive) return;
       const avoid = new Set(previous.flat().map((work) => work.id));
       hangWorks({

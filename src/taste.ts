@@ -35,7 +35,7 @@ export type Taste = {
   summary: () => TasteSummary | null;
 };
 
-const STORAGE_KEY = "museum:taste";
+const STORAGE_KEY = "passagen:taste";
 /** An earlier visit counts for this much of what it scored. */
 const CARRY = 0.35;
 const STORED = 40;

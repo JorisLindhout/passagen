@@ -189,7 +189,7 @@ function footstep(): void {
 /** In development, steps use whatever was last set in the local sound lab at /lab/. */
 function labSettings(): Partial<SoundSettings> {
   try {
-    const saved: unknown = JSON.parse(localStorage.getItem("museum:sound") ?? "null");
+    const saved: unknown = JSON.parse(localStorage.getItem("passagen:sound") ?? "null");
     return saved && typeof saved === "object" ? (saved as Partial<SoundSettings>) : {};
   } catch {
     return {};

@@ -56,6 +56,26 @@ body {
   line-height: 1.45;
 }
 
+#epigraph {
+  margin: 0 0 1rem;
+}
+
+#epigraph blockquote {
+  margin: 0;
+}
+
+#epigraph p {
+  max-width: 22rem;
+  font: italic 1.2rem/1.45 Georgia, "Times New Roman", serif;
+}
+
+#epigraph figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: #5e584f;
+}
+
 #gate #touch-hint {
   display: none;
   font-size: 0.9rem;

@@ -8,14 +8,19 @@
       name="description"
       content="A first-person walk through plain corridors hung with public-domain art."
     />
-    <title>Museum</title>
+    <title>Passagen</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
       <canvas id="view"></canvas>
       <div id="gate">
-        <p>Walk the corridors and pause when a picture is in front of you.</p>
+        <figure id="epigraph">
+          <blockquote>
+            <p>There is a goal, but no way; what we call the way is hesitation.</p>
+          </blockquote>
+          <figcaption>Franz Kafka</figcaption>
+        </figure>
         <p id="touch-hint">Drag anywhere with one thumb: up to walk, sideways to turn.</p>
         <button id="walk" type="button" disabled>Hanging pictures…</button>
         <div

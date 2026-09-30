@@ -1,3 +1,5 @@
+# Passagen
+
 A first-person maze of plain corridors that never ends. The art is the only strong color. The mazes are built in the browser from a seed. A Cloudflare Worker chooses licensed pictures from museums around the world, steered by what the visitor stops to look at, so no two walks hang the same pictures.
 
 The URL is `/#/<seed>`. The same seed rebuilds the same chain of corridors, but the pictures are chosen anew for every visit.
@@ -54,7 +56,7 @@ The only sound is your own footsteps, synthesized in the browser from filtered n
 
 At every step the distance to the nearest wall is measured in the four grid directions. Each wall and the ceiling return an echo delayed by its round trip, quieter and duller with distance, and panned to where that wall is relative to your view, so a long corridor ahead sends back a distinct slap. A dark reverb tail follows, mixed between a short, dry one and a long, hollow one by how open the spot is: a dead end sounds close, and a junction or a long view rings on for a second or two.
 
-Every value lives in `DEFAULT_SOUND` in `src/sound.ts`. In development, settings saved under `museum:sound` in local storage override the defaults.
+Every value lives in `DEFAULT_SOUND` in `src/sound.ts`. In development, settings saved under `passagen:sound` in local storage override the defaults.
 
 ## Pictures
 
@@ -79,7 +81,7 @@ Only public domain, CC0, and CC BY are kept; Commons files under share-alike lic
 
 ## Taste
 
-The browser watches which picture is in front of you, the one whose plaque would show. A picture scores for the time you stand still before it (up to 30 s), for walking up close, for opening its plaque with the button or the I key (the automatic opening does not count), and for coming back to it at least 15 s after you last looked. Passing one at full speed, close by, counts slightly against it. Scores are kept in local storage under `museum:taste`. A new visit starts from 35% of what the last one scored, so earlier visits fade.
+The browser watches which picture is in front of you, the one whose plaque would show. A picture scores for the time you stand still before it (up to 30 s), for walking up close, for opening its plaque with the button or the I key (the automatic opening does not count), and for coming back to it at least 15 s after you last looked. Passing one at full speed, close by, counts slightly against it. Scores are kept in local storage under `passagen:taste`. A new visit starts from 35% of what the last one scored, so earlier visits fade.
 
 With each maze request the browser sends the twelve works it liked most, the six it liked least, the artists it kept stopping for, and whether it stopped for loosened kinds of work. The Worker keeps the source mix above and hands eight of the twelve searches, about 70%, to a curator on Workers AI. The curator picks within each source's own lists (a Met department and classification, a Chicago place of origin, a Cleveland department, type, and period, a Smithsonian museum, an SMK kind, a Commons room) and writes free-text searches for the Met, Openverse, and Wellcome. Anything off those lists is dropped for a random search. If the curator is off, has no taste to go on, fails, or takes longer than 10 s, all twelve searches are random.
 

@@ -1,8 +1,8 @@
 import type { Getter } from "./types";
 
-const USER_AGENT = "MuseumMaze/1.0 (first-person gallery of public-domain art)";
+const USER_AGENT = "Passagen/1.0 (first-person gallery of public-domain art)";
 /** Wikimedia asks for contact details; the Art Institute's CDN rejects a URL in the agent. */
-const WIKIMEDIA_AGENT = "MuseumMaze/1.0 (https://github.com/JorisLindhout/museum)";
+const WIKIMEDIA_AGENT = "Passagen/1.0 (https://github.com/JorisLindhout/passagen)";
 
 export const CACHE_SECONDS = 60 * 60 * 24 * 7;
 /** A Worker holds six connections at once, so one stalled search keeps the rest waiting in line. */

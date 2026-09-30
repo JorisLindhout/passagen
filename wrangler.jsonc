@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "museum",
+  "name": "passagen",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-29",
   "compatibility_flags": ["nodejs_compat"],

@@ -1,5 +1,5 @@
 import { blockedHostname, CACHE_SECONDS, imageAllowed, userAgentFor } from "./http";
-import { asRecord } from "./types";
+import { readImagePath, type SignedImage } from "./signing";
 
 const MAX_BYTES = 6_000_000;
 /** The browser hangs a fallback after this; the fetch goes on in the background so the next visit finds it cached. */
@@ -7,12 +7,6 @@ const ANSWER_MS = 4_000;
 const FETCH_MS = 25_000;
 /** A host that refused an image is not asked again for a while. */
 const REFUSED_SECONDS = 60 * 60;
-
-type StoredImage = {
-  imageUrl: string;
-  thumbHost: string | null;
-  source: string;
-};
 
 type Loaded =
   | { ok: true; bytes: Uint8Array; type: string }
@@ -24,16 +18,22 @@ export async function handleImage(
   env: Env,
   ctx: ExecutionContext,
   id: string,
+  payload: string,
+  signature: string,
 ): Promise<Response> {
+  const secret = env.IMAGE_SIGNING_KEY ?? "";
+  const record = secret ? await readImagePath(secret, id, payload, signature) : null;
+  if (
+    !record ||
+    (record.thumbHost && blockedHostname(record.thumbHost)) ||
+    !imageAllowed(record.imageUrl, record.thumbHost, record.source)
+  ) {
+    return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
+  }
+
   const cacheKey = new Request(new URL(request.url).origin + `/api/image/${id}`, { method: "GET" });
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
-
-  const stored = asRecord(await env.ART.get(`img:v1:${id}`, "json"));
-  const record = readRecord(stored);
-  if (!record || !imageAllowed(record.imageUrl, record.thumbHost, record.source)) {
-    return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
-  }
 
   const loading = loadImage(record, id);
   ctx.waitUntil(
@@ -64,7 +64,7 @@ function toResponse(loaded: Loaded): Response {
   });
 }
 
-async function loadImage(record: StoredImage, id: string): Promise<Loaded> {
+async function loadImage(record: SignedImage, id: string): Promise<Loaded> {
   try {
     const upstream = await fetchAllowed(record.imageUrl, record.thumbHost, record.source, AbortSignal.timeout(FETCH_MS));
     if (!upstream.ok || !upstream.body) {
@@ -93,13 +93,6 @@ async function loadImage(record: StoredImage, id: string): Promise<Loaded> {
 /** Client errors other than a timeout or rate limit will come back the same next time. */
 function refusal(status: number): boolean {
   return status >= 400 && status < 500 && status !== 408 && status !== 429;
-}
-
-function readRecord(value: Record<string, unknown> | null): StoredImage | null {
-  if (!value || typeof value.imageUrl !== "string" || typeof value.source !== "string") return null;
-  const thumbHost = typeof value.thumbHost === "string" ? value.thumbHost : null;
-  if (thumbHost && blockedHostname(thumbHost)) return null;
-  return { imageUrl: value.imageUrl, thumbHost, source: value.source };
 }
 
 async function fetchAllowed(

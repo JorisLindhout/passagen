@@ -264,7 +264,7 @@ function labelOf(work: WorkDraft): string {
   return [work.title, work.artist, work.medium, work.date].join("|").toLowerCase();
 }
 
-export function toClient(work: WorkDraft): ClientWork {
+export function toClient(work: WorkDraft, image: string): ClientWork {
   return {
     id: work.id,
     source: work.source,
@@ -277,7 +277,7 @@ export function toClient(work: WorkDraft): ClientWork {
     credit: work.credit,
     pageUrl: work.pageUrl,
     aspect: Math.round(work.aspect * 1000) / 1000,
-    image: `/api/image/${work.id}`,
+    image,
     kind: work.kind,
     region: work.region,
     relaxed: work.relaxed ?? "",

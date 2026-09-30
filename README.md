@@ -6,9 +6,9 @@ The URL is `/#/<seed>`. The same seed rebuilds the same chain of corridors, but 
 
 ## Stack
 
-Vite and TypeScript, current Three.js, no framework. `@cloudflare/vite-plugin` runs the Worker in development. `wrangler deploy` publishes it. The Vite build is the site. Routes under `/api/` are the Worker. One KV namespace, `ART`, stores the image URL of every work handed out. One Workers AI binding, `AI`, runs the curator. One rate limit, `WORKS_LIMIT`, lets each visitor address ask for 30 mazes a minute in each Cloudflare location; past that, `/api/works` answers 429. One secret, `SMITHSONIAN_API_KEY`, from [api.data.gov](https://api.data.gov/). Two variables: `CURATOR` (`on` or `off`) and `CURATOR_MODEL`.
+Vite and TypeScript, current Three.js, no framework. `@cloudflare/vite-plugin` runs the Worker in development. `wrangler deploy` publishes it. The Vite build is the site. Routes under `/api/` are the Worker. Nothing is stored. One Workers AI binding, `AI`, runs the curator. One rate limit, `WORKS_LIMIT`, lets each visitor address ask for 30 mazes a minute in each Cloudflare location; past that, `/api/works` answers 429. Two secrets: `SMITHSONIAN_API_KEY`, from [api.data.gov](https://api.data.gov/), and `IMAGE_SIGNING_KEY`, which signs image paths. Two variables: `CURATOR` (`on` or `off`) and `CURATOR_MODEL`.
 
-The browser never calls a museum. `POST /api/works` takes `{ count, seen, taste }` and returns one maze's works, with image paths of `/api/image/<id>`. The answer is never cached. `GET /api/image/<id>` loads the upstream URL stored in KV. The client cannot pass a URL. Image bytes are cached for seven days.
+The browser never calls a museum. `POST /api/works` takes `{ count, seen, taste }` and returns one maze's works, with image paths of `/api/image/<id>/<payload>/<signature>`. The answer is never cached. The payload is the work's source and upstream URL, and the signature is an HMAC over the id and payload with `IMAGE_SIGNING_KEY`. `GET /api/image/…` fetches only paths the Worker signed, and only from the museums' image hosts, so the client cannot pass a URL of its own. Image bytes are cached for seven days under the work's id.
 
 ## Develop
 
@@ -20,6 +20,12 @@ npm run dev
 
 The Smithsonian key is optional in development, where Wrangler only warns when it is missing. Without it, that slot is filled from the Art Institute of Chicago. The other sources need no key. Put a real key in `.dev.vars` for local development.
 
+`IMAGE_SIGNING_KEY` is needed even in development; without it no maze gets pictures. Any long random string will do:
+
+```bash
+openssl rand -hex 32
+```
+
 Workers AI always runs on Cloudflare, even under `npm run dev`, and bills the account Wrangler is logged in to. Production uses `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (set in `wrangler.jsonc`). `.dev.vars` switches local development to `@cf/meta/llama-3.1-8b-instruct-fp8`, and `CURATOR=off` there skips the AI entirely. After changing `wrangler.jsonc`, run `npm run cf-typegen`.
 
 ## Deploy
@@ -28,15 +34,15 @@ Workers AI always runs on Cloudflare, even under `npm run dev`, and bills the ac
 npm run deploy
 ```
 
-A deploy needs `SMITHSONIAN_API_KEY`; Wrangler refuses to deploy without it. The first deploy creates the Worker, so the secret cannot be set in advance. Pass it in a file that holds only the line `SMITHSONIAN_API_KEY=…`, kept outside the repository (`.dev.vars` would also upload its local curator settings):
+A deploy needs `SMITHSONIAN_API_KEY` and `IMAGE_SIGNING_KEY`; Wrangler refuses to deploy without them. The first deploy creates the Worker, so the secrets cannot be set in advance. Pass them in a file that holds only the lines `SMITHSONIAN_API_KEY=…` and `IMAGE_SIGNING_KEY=…`, kept outside the repository (`.dev.vars` would also upload its local curator settings). Use a new signing key for production rather than the local one:
 
 ```bash
 npm run deploy -- --secrets-file ../passagen.secrets
 ```
 
-After that, change it with `npx wrangler secret put SMITHSONIAN_API_KEY`, and `npm run deploy` needs no file.
+After that, change either with `npx wrangler secret put <NAME>`, and `npm run deploy` needs no file. A new signing key breaks the image paths already handed out, so visitors walking at that moment see broken image icons until their next maze.
 
-Wrangler provisions the `ART` namespace when it is not bound to an existing id. The static assets use single-page fallback, and `/api/*` runs the Worker first.
+The static assets use single-page fallback, and `/api/*` runs the Worker first.
 
 ## Maze
 

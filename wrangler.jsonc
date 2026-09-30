@@ -8,11 +8,6 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "kv_namespaces": [
-    {
-      "binding": "ART"
-    }
-  ],
   // Workers AI always runs on Cloudflare and is billed, even under `npm run dev`.
   "ai": {
     "binding": "AI",
@@ -32,10 +27,12 @@
     "CURATOR": "on",
     "CURATOR_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   },
-  // A deploy fails without it; local development only warns, and the Smithsonian slot goes to Chicago.
-  // Set it in .dev.vars locally. The README's Deploy section covers the first deploy.
+  // A deploy fails without these; local development only warns. Set them in .dev.vars locally.
+  // The README's Deploy section covers the first deploy.
+  // Without SMITHSONIAN_API_KEY, the Smithsonian slot goes to Chicago.
+  // Without IMAGE_SIGNING_KEY, which signs image paths, no maze is handed out.
   "secrets": {
-    "required": ["SMITHSONIAN_API_KEY"]
+    "required": ["SMITHSONIAN_API_KEY", "IMAGE_SIGNING_KEY"]
   },
   "observability": {
     "enabled": true,

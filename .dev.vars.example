@@ -2,6 +2,10 @@
 # Without it, the Smithsonian slot is filled from the Art Institute of Chicago.
 SMITHSONIAN_API_KEY=
 
+# Signs image paths so the Worker only fetches pictures it chose. Needed here too.
+# Any long random string; make one with: openssl rand -hex 32
+IMAGE_SIGNING_KEY=
+
 # The curator runs on Workers AI, which bills your Cloudflare account even in local development.
 # A smaller model keeps local walks inside the free daily allowance.
 CURATOR_MODEL=@cf/meta/llama-3.1-8b-instruct-fp8

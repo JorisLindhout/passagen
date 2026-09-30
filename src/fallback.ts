@@ -18,7 +18,7 @@ export type Work = {
   relaxed: string;
 };
 
-const API_IMAGE = /^\/api\/image\/[a-z0-9][a-z0-9_-]{0,120}$/;
+const API_IMAGE = /^\/api\/image\/[a-z0-9][a-z0-9_-]{0,120}\/[A-Za-z0-9_-]{1,2000}\/[A-Za-z0-9_-]{43}$/;
 
 /**
  * Browsers' broken image icons, redrawn as pixel SVGs in public/fallback, hung

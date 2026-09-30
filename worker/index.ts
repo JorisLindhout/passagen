@@ -1,9 +1,11 @@
-import { CACHE_SECONDS } from "./http";
 import { handleImage } from "./image";
+import { imagePath } from "./signing";
 import { asRecord, cleanText, type TasteSummary, type TasteWork } from "./types";
 import { chooseMaze, toClient } from "./works";
 
 const IMAGE_ID = /^[a-z0-9][a-z0-9_-]{0,120}$/;
+/** Work id, then source and upstream URL in base64url, then an HMAC-SHA-256 signature. */
+const IMAGE_PATH = /^\/api\/image\/([^/]+)\/([A-Za-z0-9_-]{1,2000})\/([A-Za-z0-9_-]{43})$/;
 /** A maze with a large hall hangs about fifty, and asks for twelve spares. */
 const MAX_COUNT = 72;
 const MAX_SEEN = 2000;
@@ -22,8 +24,8 @@ export default {
       return handleWorks(request, env);
     }
     if (request.method !== "GET") return error("method not allowed", 405);
-    const imageId = url.pathname.match(/^\/api\/image\/([^/]+)$/)?.[1] ?? "";
-    if (IMAGE_ID.test(imageId)) return handleImage(request, env, ctx, imageId);
+    const [, imageId = "", payload = "", signature = ""] = url.pathname.match(IMAGE_PATH) ?? [];
+    if (IMAGE_ID.test(imageId)) return handleImage(request, env, ctx, imageId, payload, signature);
     if (url.pathname.startsWith("/api/")) return error("not found", 404);
     return new Response(null, { status: 404 });
   },
@@ -33,10 +35,15 @@ export default {
 async function handleWorks(request: Request, env: Env): Promise<Response> {
   const body = await readBody(request);
   if (!body) return error("bad request", 400);
+  const secret = env.IMAGE_SIGNING_KEY ?? "";
+  if (!secret) {
+    console.error(JSON.stringify({ message: "works failed", error: "IMAGE_SIGNING_KEY is not set" }));
+    return error("unavailable", 502);
+  }
 
   try {
     const drafts = await chooseMaze({ ...body, env });
-    const works = drafts.map(toClient);
+    const works = await Promise.all(drafts.map(async (work) => toClient(work, await imagePath(secret, work))));
     console.log(
       JSON.stringify({
         message: "works selected",
@@ -46,19 +53,6 @@ async function handleWorks(request: Request, env: Env): Promise<Response> {
       }),
     );
     if (works.length === 0) return error("unavailable", 502);
-    await Promise.all(
-      drafts.map((work) =>
-        env.ART.put(
-          `img:v1:${work.id}`,
-          JSON.stringify({
-            imageUrl: work.imageUrl,
-            thumbHost: work.thumbHost,
-            source: work.source,
-          }),
-          { expirationTtl: CACHE_SECONDS },
-        ),
-      ),
-    );
     return Response.json(works, { headers: { "cache-control": "no-store" } });
   } catch (failure) {
     console.error(

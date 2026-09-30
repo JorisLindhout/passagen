@@ -19,6 +19,8 @@ const TYPES: Record<string, Kind> = {
   Photograph: "photograph",
   "Mixed Media": "painting",
 };
+/** The IIIF server answers 403 to a width larger than the original, and many originals are smaller than this. */
+const IMAGE_WIDTH = 800;
 
 export async function queryArtic(options: {
   place: string;
@@ -72,7 +74,8 @@ function toDraft(row: Record<string, unknown>, expectedPlace: string, region: Re
   if (height <= 0 || width <= 0) return null;
   const aspect = width / height;
   if (!aspectOk(aspect)) return null;
-  const imageUrl = `https://www.artic.edu/iiif/2/${encodeURIComponent(imageId)}/full/800,/0/default.jpg`;
+  const imageWidth = Math.min(IMAGE_WIDTH, Math.floor(width));
+  const imageUrl = `https://www.artic.edu/iiif/2/${encodeURIComponent(imageId)}/full/${imageWidth},/0/default.jpg`;
   if (!imageAllowed(imageUrl, null, "artic")) return null;
   const artist =
     cleanText(row.artist_title) || firstLine(cleanText(row.artist_display)) || "Unknown";

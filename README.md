@@ -18,11 +18,7 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-The Smithsonian key is optional. Without it, that slot is filled from the Art Institute of Chicago. The other sources need no key. Put a real key in `.dev.vars` for local development, and set the deployed secret with:
-
-```bash
-npx wrangler secret put SMITHSONIAN_API_KEY
-```
+The Smithsonian key is optional in development, where Wrangler only warns when it is missing. Without it, that slot is filled from the Art Institute of Chicago. The other sources need no key. Put a real key in `.dev.vars` for local development.
 
 Workers AI always runs on Cloudflare, even under `npm run dev`, and bills the account Wrangler is logged in to. Production uses `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (set in `wrangler.jsonc`). `.dev.vars` switches local development to `@cf/meta/llama-3.1-8b-instruct-fp8`, and `CURATOR=off` there skips the AI entirely. After changing `wrangler.jsonc`, run `npm run cf-typegen`.
 
@@ -31,6 +27,14 @@ Workers AI always runs on Cloudflare, even under `npm run dev`, and bills the ac
 ```bash
 npm run deploy
 ```
+
+A deploy needs `SMITHSONIAN_API_KEY`; Wrangler refuses to deploy without it. The first deploy creates the Worker, so the secret cannot be set in advance. Pass it in a file that holds only the line `SMITHSONIAN_API_KEY=…`, kept outside the repository (`.dev.vars` would also upload its local curator settings):
+
+```bash
+npm run deploy -- --secrets-file ../passagen.secrets
+```
+
+After that, change it with `npx wrangler secret put SMITHSONIAN_API_KEY`, and `npm run deploy` needs no file.
 
 Wrangler provisions the `ART` namespace when it is not bound to an existing id. The static assets use single-page fallback, and `/api/*` runs the Worker first.
 

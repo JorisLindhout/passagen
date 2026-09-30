@@ -1,4 +1,4 @@
-# Optional key from https://api.data.gov/
+# Key from https://api.data.gov/. Optional here, required to deploy (see the README).
 # Without it, the Smithsonian slot is filled from the Art Institute of Chicago.
 SMITHSONIAN_API_KEY=
 

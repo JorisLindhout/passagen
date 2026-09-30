@@ -1,7 +1,18 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { frameSize, type HangSpot } from "./hang";
-import { CELL, hallDoorways, inHall, openingCell, WALL_H, type ChunkPlan, type Hall, type Opening } from "./maze";
+import {
+  CELL,
+  hallDoorways,
+  inHall,
+  openingCell,
+  SIDE_DX,
+  SIDE_DY,
+  WALL_H,
+  type ChunkPlan,
+  type Hall,
+  type Opening,
+} from "./maze";
 import type { Work } from "./fallback";
 
 const HANG_Y = 1.55;
@@ -308,8 +319,15 @@ function floorShade(plan: ChunkPlan): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas);
   if (!context) return texture;
   const image = context.createImageData(n, n);
-  const wall = (x: number, y: number) =>
-    x < 0 || y < 0 || x >= size || y >= size || floor[y * size + x] !== 1;
+  const beyond = [plan.entry, plan.exit].flatMap((opening) => {
+    if (!opening) return [];
+    const cell = openingCell(opening, size);
+    return [{ x: cell.x + (SIDE_DX[opening.side] ?? 0), y: cell.y + (SIDE_DY[opening.side] ?? 0) }];
+  });
+  const wall = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < size && y < size) return floor[y * size + x] !== 1;
+    return !beyond.some((cell) => cell.x === x && cell.y === y);
+  };
   for (let py = 0; py < n; py++) {
     const mz = (py + 0.5) / AO_PX_PER_CELL;
     const cz = Math.floor(mz);

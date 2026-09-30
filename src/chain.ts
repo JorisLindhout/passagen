@@ -1,4 +1,4 @@
-import { createUploader, hangWorks, worksFor } from "./art";
+import { createUploader, hangWorks, worksForMaze } from "./art";
 import type { Work } from "./fallback";
 import { hangSpots } from "./hang";
 import {
@@ -11,6 +11,7 @@ import {
   SIDE_DY,
   type ChunkPlan,
 } from "./maze";
+import type { TasteSummary } from "./taste";
 import { buildChunkView, type ChunkView, type FrameSlot, type Stage } from "./world";
 
 /**
@@ -19,10 +20,12 @@ import { buildChunkView, type ChunkView, type FrameSlot, type Stage } from "./wo
  * dropped as soon as it falls out of reach.
  */
 const BUILD_REACH = 2;
-const AVOID_BEHIND = 3;
-const LIST_LENGTH = 12;
-/** Works asked for beyond a maze's frames, for ones the mazes before already showed. */
-const SPARE_WORKS = 6;
+/**
+ * Works asked for beyond a maze's frames: for ones another maze hung while
+ * this one was asking, and for pictures that fail to load. Wellcome's image
+ * server alone leaves one frame in five or so without a picture.
+ */
+const SPARE_WORKS = 12;
 const OPENING_WAIT_MS = 15000;
 
 export type Chain = {
@@ -48,6 +51,7 @@ export function createChain(
   stage: Stage,
   pictures: { anisotropy: number; maxSide: number },
   onProgress?: (fraction: number) => void,
+  taste?: () => TasteSummary | null,
 ): Chain {
   const uploader = createUploader(stage.renderer);
   const plans: ChunkPlan[] = [];
@@ -90,22 +94,19 @@ export function createChain(
     return plans[k]!;
   };
 
-  /**
-   * A maze draws on lists of twelve: alpha.2k and alpha.2k+1, then alpha.2k.1,
-   * alpha.2k.2, and so on, as many as its frames need with a few to spare.
-   */
+  /** Every work hung this visit, and the maze it hangs in. Nothing hangs twice in one visit. */
+  const visitSeen = new Map<string, number>();
+  /** What each maze hung, so walking back finds the same pictures. */
+  const hung = new Map<number, Work[]>();
+
+  /** One request per maze, asked for when the maze is built, with the taste as it stands then. */
   const mazeWorks = (k: number): Promise<Work[]> => {
-    const chunk = plan(k);
-    const names = [`${seed}.${2 * k}`, `${seed}.${2 * k + 1}`];
-    const needed = Math.ceil((hangSpots(chunk, seed).length + SPARE_WORKS) / LIST_LENGTH);
-    for (let extra = 1; names.length < needed; extra++) names.push(`${seed}.${2 * k}.${extra}`);
-    return Promise.all(names.map(worksFor)).then((lists) => {
-      const seen = new Set<string>();
-      return lists.flat().filter((work) => {
-        if (seen.has(work.id)) return false;
-        seen.add(work.id);
-        return true;
-      });
+    const again = hung.get(k);
+    if (again) return Promise.resolve(again);
+    return worksForMaze({
+      count: hangSpots(plan(k), seed).length + SPARE_WORKS,
+      seen: [...visitSeen.keys()],
+      taste: taste?.() ?? null,
     });
   };
 
@@ -117,24 +118,24 @@ export function createChain(
     const tracked = starting && k === current;
     if (tracked) total += view.frames.length;
     const turn = starting && !tracked ? opened : Promise.resolve();
-    const lists = turn.then(() => {
-      const behind: Promise<Work[]>[] = [];
-      for (let back = 1; back <= AVOID_BEHIND && k - back >= 0; back++) behind.push(mazeWorks(k - back));
-      return Promise.all([mazeWorks(k), ...behind]);
-    });
-    void lists.then(([works, ...previous]) => {
+    void turn.then(() => mazeWorks(k)).then((works) => {
       if (!entry.alive) return;
-      const avoid = new Set(previous.flat().map((work) => work.id));
+      const avoid = new Set<string>();
+      for (const [id, maze] of visitSeen) if (maze !== k) avoid.add(id);
       hangWorks({
         frames: view.frames,
-        works: works ?? [],
+        works,
         avoid,
         anisotropy: pictures.anisotropy,
         maxSide: pictures.maxSide,
         uploader,
         alive: () => entry.alive,
         onSettle: tracked ? settle : undefined,
+        onShown: (work) => {
+          if (!visitSeen.has(work.id)) visitSeen.set(work.id, k);
+        },
       });
+      if (!hung.has(k) && works.length > 0) hung.set(k, works);
     });
   };
 

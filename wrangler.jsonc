@@ -13,6 +13,16 @@
       "binding": "ART"
     }
   ],
+  // Workers AI always runs on Cloudflare and is billed, even under `npm run dev`.
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  // CURATOR=off skips the AI and hangs random picks only. .dev.vars overrides both locally.
+  "vars": {
+    "CURATOR": "on",
+    "CURATOR_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+  },
   // Optional at runtime. Without it, those two slots go to the Met and Chicago.
   // Set with `wrangler secret put SMITHSONIAN_API_KEY` or .dev.vars locally.
   "secrets": {

@@ -1,3 +1,9 @@
 # Optional key from https://api.data.gov/
 # Without it, the two Smithsonian slots are filled from the Met and the Art Institute of Chicago.
 SMITHSONIAN_API_KEY=
+
+# The curator runs on Workers AI, which bills your Cloudflare account even in local development.
+# A smaller model keeps local walks inside the free daily allowance.
+CURATOR_MODEL=@cf/meta/llama-3.1-8b-instruct-fp8
+# Set to off to skip the AI entirely; every maze then hangs random picks.
+CURATOR=on

@@ -1,65 +1,51 @@
 import { CACHE_SECONDS } from "./http";
 import { handleImage } from "./image";
-import { asRecord, type ClientWork } from "./types";
-import { chooseWorks, toClient } from "./works";
+import { asRecord, cleanText, type TasteSummary, type TasteWork } from "./types";
+import { chooseMaze, toClient } from "./works";
 
-/** A shared seed, then the maze's place in the chain: alpha.0, alpha.1, … A hall adds alpha.6.1, alpha.6.2, … */
-const SEED = /^[A-Za-z0-9_-]{1,64}(?:\.[0-9]{1,7}){0,2}$/;
 const IMAGE_ID = /^[a-z0-9][a-z0-9_-]{0,120}$/;
+/** A maze with a large hall hangs about fifty, and asks for twelve spares. */
+const MAX_COUNT = 72;
+const MAX_SEEN = 2000;
+const MAX_BODY_BYTES = 128 * 1024;
+const MAX_LIKED = 12;
+const MAX_DISLIKED = 6;
+const MAX_ARTISTS = 5;
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
-    if (request.method !== "GET") {
-      return Response.json({ error: "method not allowed" }, { status: 405, headers: { "cache-control": "no-store" } });
+    if (url.pathname === "/api/works") {
+      if (request.method !== "POST") return error("method not allowed", 405);
+      return handleWorks(request, env);
     }
-    if (url.pathname === "/api/works") return handleWorks(url, env, ctx);
+    if (request.method !== "GET") return error("method not allowed", 405);
     const imageId = url.pathname.match(/^\/api\/image\/([^/]+)$/)?.[1] ?? "";
     if (IMAGE_ID.test(imageId)) return handleImage(request, env, ctx, imageId);
-    if (url.pathname.startsWith("/api/")) {
-      return Response.json({ error: "not found" }, { status: 404, headers: { "cache-control": "no-store" } });
-    }
+    if (url.pathname.startsWith("/api/")) return error("not found", 404);
     return new Response(null, { status: 404 });
   },
 } satisfies ExportedHandler<Env>;
 
-async function handleWorks(url: URL, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const seed = url.searchParams.get("seed") ?? "";
-  if (!SEED.test(seed)) {
-    return Response.json({ error: "seed required" }, { status: 400, headers: { "cache-control": "no-store" } });
-  }
-
-  const cacheKey = new Request(`${url.origin}/api/works?seed=${encodeURIComponent(seed)}`, { method: "GET" });
-  const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
-
-  const kvKey = `works:v3:${seed}`;
-  const stored = await env.ART.get(kvKey, "json");
-  const fromKv = clientList(stored);
-  if (fromKv && fromKv.length >= 12) {
-    const response = jsonWorks(fromKv);
-    ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
-    return response;
-  }
+/** Every visitor's list is their own, so none is cached. */
+async function handleWorks(request: Request, env: Env): Promise<Response> {
+  const body = await readBody(request);
+  if (!body) return error("bad request", 400);
 
   try {
-    const drafts = await chooseWorks(seed, env.SMITHSONIAN_API_KEY);
+    const drafts = await chooseMaze({ ...body, env });
     const works = drafts.map(toClient);
     console.log(
       JSON.stringify({
         message: "works selected",
-        seed,
         count: works.length,
+        asked: body.count,
         sources: works.map((work) => work.source),
       }),
     );
-    if (works.length === 0) {
-      return Response.json({ error: "unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
-    }
-    const ttl = works.length >= 12 ? CACHE_SECONDS : 120;
-    await Promise.all([
-      env.ART.put(kvKey, JSON.stringify(works), { expirationTtl: ttl }),
-      ...drafts.map((work) =>
+    if (works.length === 0) return error("unavailable", 502);
+    await Promise.all(
+      drafts.map((work) =>
         env.ART.put(
           `img:v1:${work.id}`,
           JSON.stringify({
@@ -67,61 +53,88 @@ async function handleWorks(url: URL, env: Env, ctx: ExecutionContext): Promise<R
             thumbHost: work.thumbHost,
             source: work.source,
           }),
-          { expirationTtl: ttl },
+          { expirationTtl: CACHE_SECONDS },
         ),
       ),
-    ]);
-    const response = jsonWorks(works, ttl);
-    if (works.length >= 12) ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
-    return response;
-  } catch (error) {
+    );
+    return Response.json(works, { headers: { "cache-control": "no-store" } });
+  } catch (failure) {
     console.error(
       JSON.stringify({
         message: "works failed",
-        error: error instanceof Error ? error.message : String(error),
+        error: failure instanceof Error ? failure.message : String(failure),
       }),
     );
-    return Response.json({ error: "unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+    return error("unavailable", 502);
   }
 }
 
-function jsonWorks(works: ClientWork[], ttl = CACHE_SECONDS): Response {
-  return Response.json(works, {
-    headers: { "cache-control": `public, max-age=${ttl}` },
-  });
-}
-
-function clientList(value: unknown): ClientWork[] | null {
-  if (!Array.isArray(value)) return null;
-  const works: ClientWork[] = [];
-  for (const item of value) {
-    const record = asRecord(item);
-    if (!record) return null;
-    const image = typeof record.image === "string" ? record.image : "";
-    const id = typeof record.id === "string" ? record.id : "";
-    if (!IMAGE_ID.test(id) || image !== `/api/image/${id}`) return null;
-    const aspect = typeof record.aspect === "number" ? record.aspect : Number.NaN;
-    const license = record.license;
-    if (license !== "CC0" && license !== "CC BY" && license !== "CC BY-SA" && license !== "Public domain") return null;
-    if (!Number.isFinite(aspect)) return null;
-    works.push({
-      id,
-      source: record.source as ClientWork["source"],
-      title: text(record.title),
-      artist: text(record.artist),
-      date: text(record.date),
-      culture: text(record.culture),
-      medium: text(record.medium),
-      license,
-      credit: text(record.credit),
-      pageUrl: text(record.pageUrl),
-      aspect,
-      image,
-    });
+async function readBody(
+  request: Request,
+): Promise<{ count: number; seen: string[]; taste: TasteSummary | null } | null> {
+  const text = await request.text().catch(() => "");
+  if (!text || text.length > MAX_BODY_BYTES) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
   }
-  return works;
+  const record = asRecord(value);
+  if (!record) return null;
+  const count = record.count;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > MAX_COUNT) return null;
+  const seen = Array.isArray(record.seen)
+    ? record.seen.slice(-MAX_SEEN).filter((id): id is string => typeof id === "string" && IMAGE_ID.test(id))
+    : [];
+  return { count, seen, taste: readTaste(record.taste) };
 }
 
-function text(value: unknown): string {
-  return typeof value === "string" ? value : "";
+function readTaste(value: unknown): TasteSummary | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const list = (items: unknown, max: number) =>
+    (Array.isArray(items) ? items.slice(0, max) : []).map(readTasteWork).filter((work) => work !== null);
+  const liked = list(record.liked, MAX_LIKED);
+  const disliked = list(record.disliked, MAX_DISLIKED);
+  if (liked.length === 0 && disliked.length === 0) return null;
+  const favoriteArtists = (Array.isArray(record.favoriteArtists) ? record.favoriteArtists.slice(0, MAX_ARTISTS) : [])
+    .map((name) => cleanText(name, 80))
+    .filter(Boolean);
+  return {
+    liked,
+    disliked,
+    favoriteArtists,
+    likesEphemera: record.likesEphemera === true,
+    likesUnnamed: record.likesUnnamed === true,
+  };
+}
+
+function readTasteWork(value: unknown): TasteWork | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const number = (item: unknown, max: number) =>
+    typeof item === "number" && Number.isFinite(item) ? Math.max(-max, Math.min(max, item)) : 0;
+  const title = cleanText(record.title, 120);
+  const artist = cleanText(record.artist, 80);
+  if (!title && !artist) return null;
+  return {
+    title,
+    artist,
+    date: cleanText(record.date, 60),
+    culture: cleanText(record.culture, 60),
+    medium: cleanText(record.medium, 100),
+    kind: cleanText(record.kind, 20),
+    region: cleanText(record.region, 20),
+    source: cleanText(record.source, 20),
+    seconds: Math.round(number(record.seconds, 30)),
+    plaque: record.plaque === true,
+    revisits: Math.round(number(record.revisits, 10)),
+    skips: Math.round(number(record.skips, 10)),
+    score: number(record.score, 100),
+  };
+}
+
+function error(message: string, status: number): Response {
+  return Response.json({ error: message }, { status, headers: { "cache-control": "no-store" } });
 }

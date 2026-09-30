@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "deploy": "wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
-    "cf-typegen": "wrangler types",
+    "cf-typegen": "wrangler types --strict-vars=false",
     "audit": "esbuild scripts/audit-sources.ts --bundle --platform=node --format=esm --log-level=warning --outfile=audit/audit.mjs && node audit/audit.mjs"
   },
   "dependencies": {

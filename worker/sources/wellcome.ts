@@ -78,8 +78,10 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
   const kind = kindFromText(genres) ?? kindFromText(described);
   if (!kind) return null;
   const workId = cleanText(work?.id);
+  const known = /^[a-z0-9]+$/.test(workId);
   return {
-    id: `wc-${id}`,
+    // One work often has several images (a second photograph, the back); the work's id keeps it to one frame a visit.
+    id: `wc-${known ? workId.toLowerCase() : id}`,
     source: "wellcome",
     kind,
     title: title?.replace(/\.$/, "") || "Untitled",
@@ -89,7 +91,7 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
     medium: described,
     license,
     credit: "Wellcome Collection, London",
-    pageUrl: /^[a-z0-9]+$/.test(workId) ? `https://wellcomecollection.org/works/${workId}` : "",
+    pageUrl: known ? `https://wellcomecollection.org/works/${workId}` : "",
     aspect,
     imageUrl,
     thumbHost: null,

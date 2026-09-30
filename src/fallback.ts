@@ -11,6 +11,11 @@ export type Work = {
   pageUrl: string;
   aspect: number;
   image: string;
+  /** painting, drawing, print, poster, photograph, collage, digital, or empty. */
+  kind: string;
+  region: string;
+  /** The rule loosened to let this work hang, "ephemera" or "unnamed", or empty. */
+  relaxed: string;
 };
 
 const API_IMAGE = /^\/api\/image\/[a-z0-9][a-z0-9_-]{0,120}$/;
@@ -35,6 +40,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/51868",
     aspect: 1.2398,
     image: "/fallback/met-51868.jpg",
+    kind: "painting",
+    region: "asia",
+    relaxed: "",
   },
   {
     id: "met-544502",
@@ -49,6 +57,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/544502",
     aspect: 1,
     image: "/fallback/met-544502.jpg",
+    kind: "painting",
+    region: "africa",
+    relaxed: "",
   },
   {
     id: "met-436122",
@@ -63,6 +74,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/436122",
     aspect: 0.7547,
     image: "/fallback/met-436122.jpg",
+    kind: "painting",
+    region: "europe",
+    relaxed: "",
   },
   {
     id: "met-311021",
@@ -77,6 +91,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/311021",
     aspect: 0.688,
     image: "/fallback/met-311021.jpg",
+    kind: "",
+    region: "africa",
+    relaxed: "",
   },
   {
     id: "met-453351",
@@ -91,6 +108,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/453351",
     aspect: 0.7027,
     image: "/fallback/met-453351.jpg",
+    kind: "painting",
+    region: "asia",
+    relaxed: "",
   },
   {
     id: "met-286582",
@@ -105,6 +125,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/286582",
     aspect: 0.6643,
     image: "/fallback/met-286582.jpg",
+    kind: "photograph",
+    region: "americas",
+    relaxed: "",
   },
   {
     id: "met-13997",
@@ -119,6 +142,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/13997",
     aspect: 1.2611,
     image: "/fallback/met-13997.jpg",
+    kind: "",
+    region: "americas",
+    relaxed: "",
   },
   {
     id: "met-249232",
@@ -133,6 +159,9 @@ export const FALLBACK_WORKS: Work[] = [
     pageUrl: "https://www.metmuseum.org/art/collection/search/249232",
     aspect: 1.6339,
     image: "/fallback/met-249232.jpg",
+    kind: "",
+    region: "europe",
+    relaxed: "",
   },
 ];
 
@@ -165,6 +194,9 @@ export function sanitizeWorks(value: unknown): Work[] {
       pageUrl: httpUrl(record.pageUrl),
       aspect,
       image,
+      kind: text(record.kind),
+      region: text(record.region),
+      relaxed: text(record.relaxed),
     });
   }
   return works;

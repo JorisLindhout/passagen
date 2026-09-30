@@ -5,6 +5,7 @@ import { createInput } from "./input";
 import { createPlaque } from "./overlay";
 import { BOB_CYCLE, createWalker, EYE_HEIGHT, stepWalker, TOP_SPEED } from "./walk";
 import { createFootsteps, measureSpace, type SoundSettings } from "./sound";
+import { createTaste } from "./taste";
 import { createStage } from "./world";
 
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -43,7 +44,8 @@ if (
   throw new Error("missing view");
 }
 
-const plaque = createPlaque(plaqueRoot, plaqueText, plaqueToggle);
+const taste = createTaste();
+const plaque = createPlaque(plaqueRoot, plaqueText, plaqueToggle, (work) => taste.plaqueOpened(work));
 
 const seed = currentSeed();
 const world = createStage(canvas, mobile);
@@ -60,6 +62,7 @@ const chain = createChain(
     maxSide: mobile ? PHONE_PICTURE_SIDE : DESKTOP_PICTURE_SIDE,
   },
   showProgress,
+  () => taste.summary(),
 );
 void Promise.race([chain.ready, new Promise((resolve) => setTimeout(resolve, LOAD_LIMIT_MS))]).then(() => {
   showProgress(1);
@@ -74,6 +77,7 @@ const footsteps = createFootsteps(import.meta.env.DEV ? labSettings() : {});
 let stepCount = 0;
 let shownId: string | null = null;
 let looping = false;
+let walking = false;
 let last = performance.now();
 const look = new THREE.Vector3();
 
@@ -83,6 +87,7 @@ walkButton.addEventListener("click", () => {
   footsteps.start();
   input.setEnabled(true);
   gate.hidden = true;
+  walking = true;
   if (!mobile) void canvas.requestPointerLock();
 });
 
@@ -130,16 +135,18 @@ function frame(now: number): void {
   world.camera.rotation.y = walker.yaw;
   world.camera.rotation.x = walker.pitch;
   world.camera.rotation.z = 0;
-  updatePlaque();
+  updatePlaque(dt);
   footstep();
   world.renderer.render(world.scene, world.camera);
   requestAnimationFrame(frame);
 }
 
-function updatePlaque(): void {
+function updatePlaque(dt: number): void {
   world.camera.getWorldDirection(look);
   let best: Work | null = null;
   let bestDot = 0.9;
+  let bestDistance = 0;
+  let bestReach = 0;
   for (const frameSlot of chain.frames()) {
     const work = frameSlot.work;
     if (!work) continue;
@@ -158,8 +165,12 @@ function updatePlaque(): void {
     if (dot > bestDot) {
       bestDot = dot;
       best = work;
+      bestDistance = dist;
+      bestReach = frameSlot.reach;
     }
   }
+  // Before Walk, the view is only the spawn point, not a choice.
+  if (walking) taste.observe(best, { dt, distance: bestDistance, reach: bestReach, pace: walker.pace });
   const id = best?.id ?? null;
   if (id === shownId) return;
   shownId = id;

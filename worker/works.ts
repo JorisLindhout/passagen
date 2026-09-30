@@ -1,5 +1,7 @@
+import { CLEVELAND, MET_DEPARTMENTS, PLACES, SMITHSONIAN, WINDOWS } from "./catalog";
+import { curate } from "./curator";
 import { createGetter } from "./http";
-import { rejectReason } from "./kind";
+import { rejectReason, relaxation, type Relax } from "./kind";
 import { queryArtic } from "./sources/artic";
 import { CLEVELAND_TYPES, queryCleveland } from "./sources/cleveland";
 import { COMMONS_ROOMS, COMMONS_WIDE, queryCommons, type CommonsRoom } from "./sources/commons";
@@ -14,6 +16,7 @@ import {
   type ClientWork,
   type Getter,
   type RegionName,
+  type TasteSummary,
   type WorkDraft,
 } from "./types";
 
@@ -24,7 +27,7 @@ export type Rng = {
 };
 
 export type Slot =
-  | { kind: "met"; departmentId: number; classification: MetClassification; region: RegionName }
+  | { kind: "met"; departmentId: number; classification: MetClassification; region: RegionName; q?: string }
   | { kind: "artic"; place: string; region: RegionName }
   | { kind: "cleveland"; department: string; region: RegionName; after: number; before: number; type: string }
   | { kind: "smithsonian"; unit: string; region: RegionName }
@@ -45,74 +48,8 @@ const WELLCOME: { query: string; region: RegionName; pages: number }[] = [
   { query: "oil painting", region: "europe", pages: 10 },
 ];
 
-/** Classifications with at least a few dozen public-domain works in the department. */
-const MET_DEPARTMENTS: { id: number; region: RegionName; classifications: MetClassification[] }[] = [
-  { id: 11, region: "europe", classifications: ["Paintings"] },
-  { id: 6, region: "asia", classifications: ["Paintings", "Prints"] },
-  { id: 10, region: "africa", classifications: ["Paintings", "Drawings"] },
-  { id: 14, region: "asia", classifications: ["Paintings"] },
-  { id: 5, region: "unknown", classifications: ["Paintings", "Photographs", "Drawings", "Prints"] },
-  { id: 19, region: "unknown", classifications: ["Photographs"] },
-  { id: 1, region: "americas", classifications: ["Paintings", "Drawings"] },
-  { id: 21, region: "unknown", classifications: ["Paintings", "Drawings", "Prints", "Photographs"] },
-  { id: 9, region: "unknown", classifications: ["Drawings", "Prints", "Photographs"] },
-  { id: 13, region: "europe", classifications: ["Paintings"] },
-];
-
 const MET_QUERIES = ["portrait", "landscape", "flower", "bird", "figure", "river", "woman", "city"];
 
-const PLACES: { place: string; region: RegionName }[] = [
-  { place: "China", region: "asia" },
-  { place: "Japan", region: "asia" },
-  { place: "France", region: "europe" },
-  { place: "Italy", region: "europe" },
-  { place: "Netherlands", region: "europe" },
-  { place: "India", region: "asia" },
-  { place: "Mexico", region: "americas" },
-  { place: "Egypt", region: "africa" },
-  { place: "Iran", region: "asia" },
-  { place: "United States", region: "americas" },
-  { place: "Korea", region: "asia" },
-  { place: "Germany", region: "europe" },
-  { place: "Nigeria", region: "africa" },
-  { place: "Peru", region: "americas" },
-];
-
-const CLEVELAND: { name: string; region: RegionName }[] = [
-  { name: "European Painting and Sculpture", region: "europe" },
-  { name: "Modern European Painting and Sculpture", region: "europe" },
-  { name: "Chinese Art", region: "asia" },
-  { name: "Japanese Art", region: "asia" },
-  { name: "Korean Art", region: "asia" },
-  { name: "Indian and South East Asian Art", region: "asia" },
-  { name: "Islamic Art", region: "asia" },
-  { name: "African Art", region: "africa" },
-  { name: "Egyptian and Ancient Near Eastern Art", region: "africa" },
-  { name: "Art of the Americas", region: "americas" },
-  { name: "American Painting and Sculpture", region: "americas" },
-  { name: "Oceania", region: "oceania" },
-  { name: "Prints", region: "unknown" },
-  { name: "Drawings", region: "unknown" },
-  { name: "Photography", region: "unknown" },
-];
-
-const WINDOWS = [
-  { after: -2000, before: 600 },
-  { after: 600, before: 1400 },
-  { after: 1400, before: 1700 },
-  { after: 1700, before: 1850 },
-  { after: 1850, before: 1950 },
-  { after: 1950, before: 2020 },
-];
-
-/** The American Indian museum shares no CC0 images and Cooper Hewitt gives no dimensions, so neither can fill a frame. */
-const SMITHSONIAN: { code: string; region: RegionName }[] = [
-  { code: "SAAM", region: "americas" },
-  { code: "NMAfA", region: "africa" },
-  { code: "NMAA", region: "asia" },
-];
-
-const FORCED_MET = [6, 5, 10, 14];
 const FORCED_CLEVELAND = [
   "Chinese Art",
   "African Art",
@@ -126,107 +63,166 @@ const FORCED_CLEVELAND = [
 ];
 const FORCED_SMITHSONIAN = ["NMAfA", "NMAA"];
 
-const LIST_SIZE = 12;
-/** Spare searches run alongside the twelve, so an empty or stalled one is covered without another round trip. */
+/** Searches in one template; past the quorum, the maze goes out once this many have answered. */
+const SLOT_QUORUM = 12;
+/** Spare searches run alongside the template, so an empty or stalled one is covered without another round trip. */
 const SPARES = 3;
 /** Most searches are back by now; past it, the list goes out as soon as enough of them have answered. */
 const QUORUM_MS = 3_000;
 /** A search still out after this is left behind. */
 const SEARCH_MS = 5_000;
 const DEADLINE_MS = 10_000;
+/** Share of a template's searches the curator fills from the visitor's taste; the rest stay random. */
+const CURATED_SHARE = 0.7;
+/** In the random part, at most one work in this many resolves to Europe. */
+const EUROPE_EVERY = 3;
+/** An artist the visitor keeps stopping for may hang this often in one maze; anyone else once. */
+const FAVORITE_REPEATS = 3;
+/** Works in the random part that only hang because a filter was loosened, so a visitor can come across them at all. */
+const RELAXED_EXPLORE = 1;
 
-export async function chooseWorks(seed: string, apiKey: string | undefined): Promise<WorkDraft[]> {
-  const key = typeof apiKey === "string" ? apiKey.trim() : "";
-  const rng = makeRng(`works:${seed}`);
+type Part = "curated" | "explore";
+
+/**
+ * One maze's works for one visitor, never the same twice. About seven in ten
+ * searches follow the visitor's taste; the rest are random, as before, and
+ * only they keep the cap on European works. With no taste yet, or no
+ * curator, every search is random.
+ */
+export async function chooseMaze(options: {
+  count: number;
+  seen: string[];
+  taste: TasteSummary | null;
+  env: Env;
+}): Promise<WorkDraft[]> {
+  const { count, seen, taste, env } = options;
+  const key = typeof env.SMITHSONIAN_API_KEY === "string" ? env.SMITHSONIAN_API_KEY.trim() : "";
+  const hasKey = key.length > 0;
+  const rng = makeRng(crypto.randomUUID());
   const get = createGetter(48);
+
+  const template = rng.shuffle(buildSlots(rng, hasKey));
+  const positions = template.map((_, index) => index).slice(0, Math.round(template.length * CURATED_SHARE));
+  const curated = taste ? await curate(env, taste, template, positions) : template.map(() => null);
+  const slots = template.map((slot, index) => curated[index] ?? slot);
+  const parts: Part[] = template.map((_, index) => (curated[index] ? "curated" : "explore"));
+
   const start = Date.now();
   const deadline = start + DEADLINE_MS;
-  const expired = () => Date.now() > deadline;
-  const usedIds = new Set<string>();
-  const usedArtists = new Set<string>();
-  const works: WorkDraft[] = [];
+  const usedIds = new Set(seen);
+  /** Two images of one object share its museum page. */
+  const usedPages = new Set<string>();
+  /** Museums catalogue copies of one print separately; the same label twice reads as a repeat. */
+  const usedLabels = new Set<string>();
+  const artistCounts = new Map<string, number>();
+  const favorites = new Set((taste?.favoriteArtists ?? []).map(artistKey).filter((name) => name !== null));
+  const curatedRelax: Relax = { ephemera: taste?.likesEphemera, unnamed: taste?.likesUnnamed };
   const rejected: Record<string, number> = {};
+  const rejectedIds = new Set<string>();
+  const picked: { work: WorkDraft; part: Part }[] = [];
 
-  const accept = (work: WorkDraft) => {
+  const curatedSlots = parts.filter((part) => part === "curated").length;
+  const exploreTarget = Math.round((count * (slots.length - curatedSlots)) / slots.length);
+  const curatedTarget = count - exploreTarget;
+  const europeCap = Math.ceil(exploreTarget / EUROPE_EVERY);
+  let europeExplore = 0;
+  let relaxedExplore = 0;
+  const taken = (part: Part) => picked.reduce((sum, item) => sum + (item.part === part ? 1 : 0), 0);
+  const short = () => count - picked.length;
+
+  const accept = (work: WorkDraft, part: Part, capEurope: boolean) => {
     if (!work.id || !work.imageUrl || !aspectOk(work.aspect)) return false;
-    const reason = rejectReason(work);
+    if (usedIds.has(work.id) || (work.pageUrl && usedPages.has(work.pageUrl))) return false;
+    if (usedLabels.has(labelOf(work))) return false;
+    const relax: Relax =
+      part === "curated" ? curatedRelax : relaxedExplore < RELAXED_EXPLORE ? { ephemera: true, unnamed: true } : {};
+    const reason = rejectReason(work, relax);
     if (reason) {
-      const key = `${work.source}: ${reason}`;
-      rejected[key] = (rejected[key] ?? 0) + 1;
+      if (!rejectedIds.has(work.id)) {
+        rejectedIds.add(work.id);
+        const label = `${work.source}: ${reason}`;
+        rejected[label] = (rejected[label] ?? 0) + 1;
+      }
       return false;
     }
-    if (usedIds.has(work.id)) return false;
     const artist = artistKey(work.artist);
-    if (artist && usedArtists.has(artist)) return false;
+    if (artist && (artistCounts.get(artist) ?? 0) >= (favorites.has(artist) ? FAVORITE_REPEATS : 1)) return false;
+    if (capEurope && part === "explore" && work.region === "europe" && europeExplore >= europeCap) return false;
     return true;
   };
-  const commit = (work: WorkDraft) => {
+  const commit = (work: WorkDraft, part: Part) => {
     usedIds.add(work.id);
+    if (work.pageUrl) usedPages.add(work.pageUrl);
+    usedLabels.add(labelOf(work));
     const artist = artistKey(work.artist);
-    if (artist) usedArtists.add(artist);
-  };
-  const release = (work: WorkDraft) => {
-    const artist = artistKey(work.artist);
-    if (artist) usedArtists.delete(artist);
-  };
-  const takeFrom = (list: WorkDraft[], allowEurope: boolean) => {
-    for (const work of list) {
-      if (!allowEurope && work.region === "europe") continue;
-      if (!accept(work)) continue;
-      commit(work);
-      return work;
+    if (artist) artistCounts.set(artist, (artistCounts.get(artist) ?? 0) + 1);
+    const relaxed = rejectReason(work) ? relaxation(work) : null;
+    if (relaxed) {
+      work.relaxed = relaxed;
+      if (part === "explore") relaxedExplore += 1;
     }
-    return null;
+    if (part === "explore" && work.region === "europe") europeExplore += 1;
+    picked.push({ work, part });
   };
-
-  const slots = rng.shuffle(buildSlots(rng, key.length > 0));
-  const spareSlots = rng.shuffle(backupSlots(rng, key.length > 0)).slice(0, SPARES);
+  const spareSlots = rng.shuffle(backupSlots(rng, hasKey)).slice(0, SPARES);
   const loaded = await gather(
-    [...slots, ...spareSlots].map((slot, index) => loadSlot(slot, makeRng(`works:${seed}:${index}`), get, key)),
+    [...slots, ...spareSlots].map((slot) => loadSlot(slot, makeRng(crypto.randomUUID()), get, key)),
     slots.length,
     start,
   );
+  const lists = loaded.slice(0, slots.length).map((list) => rng.shuffle(list));
   const spares = loaded.slice(slots.length).map((list) => rng.shuffle(list));
-  let nextSpare = 0;
-  const fromSpares = (allowEurope: boolean) => {
-    for (let tried = 0; tried < spares.length; tried++) {
-      const list = spares[(nextSpare + tried) % spares.length] ?? [];
-      const picked = takeFrom(list, allowEurope);
-      if (!picked) continue;
-      nextSpare = (nextSpare + tried + 1) % spares.length;
-      return picked;
+
+  /** One work per search per round, so a source that answers with twenty does not fill the part alone. */
+  const roundRobin = (from: WorkDraft[][], part: Part, target: () => number, capEurope = true) => {
+    const cursors = from.map(() => 0);
+    let moved = true;
+    while (moved && target() > 0) {
+      moved = false;
+      from.forEach((list, index) => {
+        if (target() <= 0) return;
+        while (cursors[index]! < list.length) {
+          const work = list[cursors[index]!];
+          cursors[index]! += 1;
+          if (work && accept(work, part, capEurope)) {
+            commit(work, part);
+            moved = true;
+            return;
+          }
+        }
+      });
     }
-    return null;
   };
+  const listsOf = (part: Part) => lists.filter((_, index) => parts[index] === part);
+  roundRobin(listsOf("curated"), "curated", () => curatedTarget - taken("curated"));
+  roundRobin(listsOf("explore"), "explore", () => exploreTarget - taken("explore"));
+  roundRobin(spares, "explore", () => exploreTarget - taken("explore"));
 
-  for (const list of loaded.slice(0, slots.length)) {
-    if (works.length >= LIST_SIZE) break;
-    const picked = takeFrom(rng.shuffle(list), true) ?? fromSpares(true);
-    if (picked) works.push(picked);
+  // Thin searches leave their share to the rest; the European cap gives way last, before a frame stays bare.
+  roundRobin([...lists, ...spares], "explore", short);
+  if (short() > 0 && Date.now() < deadline) {
+    const extra = await Promise.all(
+      topUpSlots(rng, hasKey).map((slot) =>
+        beforeDeadline(loadSlot(slot, makeRng(crypto.randomUUID()), get, key), deadline),
+      ),
+    );
+    spares.push(...extra.map((list) => rng.shuffle(list)));
+    roundRobin(spares, "explore", short);
   }
+  roundRobin([...lists, ...spares], "explore", short, false);
 
-  let extra = 0;
-  while (works.length < LIST_SIZE && extra < 4 && !expired()) {
-    extra += 1;
-    const filled = await fillFromAnother(rng, get, key, deadline, takeFrom);
-    if (!filled) break;
-    works.push(filled);
-  }
-
-  let europeSeen = 0;
-  for (let index = 0; index < works.length; index++) {
-    const current = works[index];
-    if (!current || current.region !== "europe") continue;
-    europeSeen += 1;
-    if (europeSeen <= 4 || expired()) continue;
-    const replacement = fromSpares(false) ?? (await forcedReplacement(rng, get, key, deadline, takeFrom));
-    if (!replacement) continue;
-    release(current);
-    works[index] = replacement;
-  }
-
-  if (Object.keys(rejected).length > 0) console.log(JSON.stringify({ message: "works rejected", seed, rejected }));
-  return works.slice(0, LIST_SIZE);
+  console.log(
+    JSON.stringify({
+      message: "maze chosen",
+      asked: count,
+      curated: taken("curated"),
+      explore: taken("explore"),
+      curatedSearches: curatedSlots,
+      relaxed: picked.filter((item) => item.work.relaxed).map((item) => item.work.relaxed),
+      rejected,
+    }),
+  );
+  return rng.shuffle(picked).map((item) => item.work).slice(0, count);
 }
 
 /**
@@ -249,7 +245,7 @@ function gather(lists: Promise<WorkDraft[]>[], primary: number, start: number): 
       if (results.every((list) => list !== null)) return finish();
       const primaryIn = results.slice(0, primary).every((list) => list !== null);
       const usable = results.filter((list) => list && list.length > 0).length;
-      if ((primaryIn || Date.now() - start >= QUORUM_MS) && usable >= LIST_SIZE) finish();
+      if ((primaryIn || Date.now() - start >= QUORUM_MS) && usable >= SLOT_QUORUM) finish();
     };
     lists.forEach((list, index) => {
       void list
@@ -262,6 +258,10 @@ function gather(lists: Promise<WorkDraft[]>[], primary: number, start: number): 
     const quorum = setTimeout(check, Math.max(0, start + QUORUM_MS - Date.now()));
     const cutoff = setTimeout(finish, Math.max(0, start + SEARCH_MS - Date.now()));
   });
+}
+
+function labelOf(work: WorkDraft): string {
+  return [work.title, work.artist, work.medium, work.date].join("|").toLowerCase();
 }
 
 export function toClient(work: WorkDraft): ClientWork {
@@ -278,6 +278,9 @@ export function toClient(work: WorkDraft): ClientWork {
     pageUrl: work.pageUrl,
     aspect: Math.round(work.aspect * 1000) / 1000,
     image: `/api/image/${work.id}`,
+    kind: work.kind,
+    region: work.region,
+    relaxed: work.relaxed ?? "",
   };
 }
 
@@ -338,7 +341,7 @@ export async function loadSlot(slot: Slot, rng: Rng, get: Getter, apiKey: string
           departmentId: slot.departmentId,
           classification: slot.classification,
           region: slot.region,
-          q: rng.pick(MET_QUERIES),
+          q: slot.q ?? rng.pick(MET_QUERIES),
           get,
           rng,
         });
@@ -397,22 +400,6 @@ export async function loadSlot(slot: Slot, rng: Rng, get: Getter, apiKey: string
   }
 }
 
-async function fillFromAnother(
-  rng: Rng,
-  get: Getter,
-  apiKey: string,
-  deadline: number,
-  takeFrom: (list: WorkDraft[], allowEurope: boolean) => WorkDraft | null,
-): Promise<WorkDraft | null> {
-  const backups = rng.shuffle(backupSlots(rng, apiKey.length > 0)).slice(0, 2);
-  for (const slot of backups) {
-    if (Date.now() > deadline) return null;
-    const picked = takeFrom(rng.shuffle(await beforeDeadline(loadSlot(slot, rng, get, apiKey), deadline)), true);
-    if (picked) return picked;
-  }
-  return null;
-}
-
 export function backupSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
   const met = rng.pick(MET_DEPARTMENTS);
   const place = rng.pick(PLACES);
@@ -442,22 +429,20 @@ export function backupSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
   return slots;
 }
 
-async function forcedReplacement(
-  rng: Rng,
-  get: Getter,
-  apiKey: string,
-  deadline: number,
-  takeFrom: (list: WorkDraft[], allowEurope: boolean) => WorkDraft | null,
-): Promise<WorkDraft | null> {
-  const candidates: Slot[] = [
-    ...rng.shuffle(COMMONS_ROOMS)
+/**
+ * One more round, all at once, for a maze still short: a few non-European
+ * searches, so the random part can stay within its cap, and some ordinary
+ * ones. The Met is left out; it spends five requests on two works.
+ */
+function topUpSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
+  const forced: Slot[] = [
+    ...rng
+      .shuffle(COMMONS_ROOMS)
       .slice(0, 2)
       .map((room) => ({ kind: "commons" as const, room })),
     ...rng
-      .shuffle(MET_DEPARTMENTS.filter((department) => FORCED_MET.includes(department.id)))
-      .map((department) => metSlot(rng, department)),
-    ...rng.shuffle(FORCED_CLEVELAND)
-      .slice(0, 3)
+      .shuffle(FORCED_CLEVELAND)
+      .slice(0, 2)
       .map((department) => {
         const window = rng.pick(WINDOWS);
         return {
@@ -469,19 +454,14 @@ async function forcedReplacement(
           type: "Painting",
         };
       }),
-    ...(apiKey ? FORCED_SMITHSONIAN : []).map((unit) => ({
+    ...(hasSmithsonian ? rng.shuffle(FORCED_SMITHSONIAN).slice(0, 1) : []).map((unit) => ({
       kind: "smithsonian" as const,
       unit,
       region: SMITHSONIAN.find((item) => item.code === unit)?.region ?? "unknown",
     })),
   ];
-  for (const slot of candidates) {
-    if (Date.now() > deadline) return null;
-    const list = await beforeDeadline(loadSlot(slot, rng, get, apiKey), deadline);
-    const picked = takeFrom(slot.kind === "commons" ? rng.shuffle(list) : list, false);
-    if (picked) return picked;
-  }
-  return null;
+  const ordinary = backupSlots(rng, false).filter((slot) => slot.kind !== "met");
+  return [...forced, ...rng.shuffle(ordinary).slice(0, 3)];
 }
 
 function beforeDeadline(list: Promise<WorkDraft[]>, deadline: number): Promise<WorkDraft[]> {

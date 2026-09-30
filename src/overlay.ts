@@ -10,9 +10,15 @@ export type Plaque = { set: (work: Work | null) => void };
  * The label opens when a new work comes into view, then folds into a small
  * button in the corner so it does not sit on the picture. Glancing away and
  * back brings the button, not the label. The button, or the I key while the
- * pointer is locked, opens it again until closed.
+ * pointer is locked, opens it again until closed. Only those opens reach
+ * `onOpen`.
  */
-export function createPlaque(root: HTMLElement, text: HTMLElement, toggle: HTMLButtonElement): Plaque {
+export function createPlaque(
+  root: HTMLElement,
+  text: HTMLElement,
+  toggle: HTMLButtonElement,
+  onOpen?: (work: Work) => void,
+): Plaque {
   let current: Work | null = null;
   let lastId: string | null = null;
   let foldTimer = 0;
@@ -27,7 +33,9 @@ export function createPlaque(root: HTMLElement, text: HTMLElement, toggle: HTMLB
   const reopen = () => {
     if (!current) return;
     window.clearTimeout(foldTimer);
-    setOpen(!root.classList.contains("open"));
+    const open = !root.classList.contains("open");
+    setOpen(open);
+    if (open) onOpen?.(current);
   };
 
   toggle.addEventListener("click", (event) => {

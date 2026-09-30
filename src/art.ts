@@ -1,22 +1,20 @@
 import * as THREE from "three";
 import { FALLBACK_WORKS, sanitizeWorks, type Work } from "./fallback";
+import type { TasteSummary } from "./taste";
 import type { FrameSlot } from "./world";
 
-const lists = new Map<string, Promise<Work[]>>();
+/** The worker ignores more than this many seen works, so the most recent go. */
+const SEEN_LIMIT = 2000;
 
-/** One list per seed. An empty answer is not kept, so a later visit asks again. */
-export function worksFor(seed: string): Promise<Work[]> {
-  const cached = lists.get(seed);
-  if (cached) return cached;
-  const request = fetch(`/api/works?seed=${encodeURIComponent(seed)}`)
+/** One maze's works, chosen for this visitor. Any failure leaves the fallback images. */
+export function worksForMaze(request: { count: number; seen: string[]; taste: TasteSummary | null }): Promise<Work[]> {
+  return fetch("/api/works", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...request, seen: request.seen.slice(-SEEN_LIMIT) }),
+  })
     .then(async (response) => (response.ok ? sanitizeWorks(await response.json()) : []))
-    .catch(() => [] as Work[])
-    .then((works) => {
-      if (works.length === 0) lists.delete(seed);
-      return works;
-    });
-  lists.set(seed, request);
-  return request;
+    .catch(() => [] as Work[]);
 }
 
 /** Main-thread time per frame for sending pictures to the GPU. At least one goes each frame. */
@@ -88,9 +86,14 @@ function shrink(texture: THREE.Texture, maxSide: number): void {
   };
 }
 
+const FALLBACK_IDS = new Set(FALLBACK_WORKS.map((work) => work.id));
+
 /**
- * Hangs a maze's list, skipping any work the previous mazes already showed.
- * The fallback images fill what is left, so a dead API still leaves pictures.
+ * Hangs a maze's list, skipping any work another maze already showed. A
+ * picture that fails to load gives way to the list's spare works, then to
+ * the fallback images, first those not yet shown this visit, so a slow
+ * museum or a dead API still leaves pictures without hanging the same eight
+ * everywhere.
  */
 export function hangWorks(options: {
   frames: FrameSlot[];
@@ -103,15 +106,17 @@ export function hangWorks(options: {
   alive: () => boolean;
   /** Called once per frame, when its picture is up or has failed for good. */
   onSettle?: () => void;
+  /** Called for every work put in a frame, spares and fallbacks included. */
+  onShown?: (work: Work) => void;
 }): void {
   const { frames, avoid, anisotropy, maxSide, uploader, alive } = options;
   const settle = options.onSettle ?? (() => {});
+  const shown = options.onShown ?? (() => {});
   const chosen = options.works.filter((work) => !avoid.has(work.id));
-  for (const fallback of FALLBACK_WORKS) {
-    if (chosen.length >= frames.length) break;
-    if (chosen.some((work) => work.id === fallback.id)) continue;
-    chosen.push(fallback);
-  }
+  const spares = chosen.slice(frames.length);
+  const fresh = FALLBACK_WORKS.filter((work) => !avoid.has(work.id) && !chosen.some((item) => item.id === work.id));
+  const next = (index: number): Work =>
+    spares.shift() ?? fresh.shift() ?? FALLBACK_WORKS[index % FALLBACK_WORKS.length]!;
 
   const loader = new THREE.TextureLoader();
   loader.setCrossOrigin("anonymous");
@@ -143,22 +148,23 @@ export function hangWorks(options: {
       });
   };
 
-  const hang = (slot: FrameSlot, work: Work, onError: () => void) => {
+  const hang = (slot: FrameSlot, work: Work, index: number) => {
     slot.work = work;
     slot.setAspect(work.aspect);
-    loader.load(work.image, (texture) => upload(slot, texture), undefined, onError);
+    shown(work);
+    loader.load(
+      work.image,
+      (texture) => upload(slot, texture),
+      undefined,
+      () => {
+        if (!alive() || FALLBACK_IDS.has(work.id)) {
+          settle();
+          return;
+        }
+        hang(slot, next(index), index);
+      },
+    );
   };
 
-  frames.forEach((slot, index) => {
-    const spare = FALLBACK_WORKS[index % FALLBACK_WORKS.length];
-    const work = chosen[index] ?? spare;
-    hang(slot, work, () => {
-      const fallback = work.id === spare.id ? FALLBACK_WORKS[(index + 1) % FALLBACK_WORKS.length] : spare;
-      if (!alive()) {
-        settle();
-        return;
-      }
-      hang(slot, fallback, settle);
-    });
-  });
+  frames.forEach((slot, index) => hang(slot, chosen[index] ?? next(index), index));
 }

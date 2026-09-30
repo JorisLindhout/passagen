@@ -15,6 +15,9 @@ export type RegionName = "europe" | "asia" | "africa" | "americas" | "oceania" |
 /** Flat work made to hang or be framed; anything a source cannot place here stays out. */
 export type Kind = "painting" | "drawing" | "print" | "poster" | "photograph" | "collage" | "digital";
 
+/** A filter loosened for a visitor who stopped for this kind of thing. */
+export type Relaxed = "ephemera" | "unnamed";
+
 export type WorkDraft = {
   id: string;
   source: SourceName;
@@ -31,6 +34,7 @@ export type WorkDraft = {
   imageUrl: string;
   thumbHost: string | null;
   region: RegionName;
+  relaxed?: Relaxed;
 };
 
 export type ClientWork = {
@@ -46,6 +50,34 @@ export type ClientWork = {
   pageUrl: string;
   aspect: number;
   image: string;
+  kind: Kind;
+  region: RegionName;
+  relaxed: Relaxed | "";
+};
+
+/** One work the visitor stopped for or walked past, as the browser describes it. */
+export type TasteWork = {
+  title: string;
+  artist: string;
+  date: string;
+  culture: string;
+  medium: string;
+  kind: string;
+  region: string;
+  source: string;
+  seconds: number;
+  plaque: boolean;
+  revisits: number;
+  skips: number;
+  score: number;
+};
+
+export type TasteSummary = {
+  liked: TasteWork[];
+  disliked: TasteWork[];
+  favoriteArtists: string[];
+  likesEphemera: boolean;
+  likesUnnamed: boolean;
 };
 
 export type Getter = (url: string) => Promise<unknown>;

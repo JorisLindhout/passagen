@@ -1,4 +1,4 @@
-import type { Work } from "./fallback";
+import { isFallback, type Work } from "./fallback";
 import { TOP_SPEED } from "./walk";
 
 /** What the worker hears about one work. Strings are cut short; the curator only needs the gist. */
@@ -127,7 +127,7 @@ export function createTaste(): Taste {
   return {
     observe(work, view) {
       clock += view.dt;
-      if (!work) {
+      if (!work || isFallback(work)) {
         endLook();
         return;
       }
@@ -155,6 +155,7 @@ export function createTaste(): Taste {
       }
     },
     plaqueOpened(work) {
+      if (isFallback(work)) return;
       entryFor(work).plaques += 1;
     },
     summary() {

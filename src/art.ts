@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { FALLBACK_WORKS, sanitizeWorks, type Work } from "./fallback";
+import { FALLBACK_WORKS, isFallback, sanitizeWorks, type Work } from "./fallback";
 import type { TasteSummary } from "./taste";
 import type { FrameSlot } from "./world";
 
@@ -86,14 +86,11 @@ function shrink(texture: THREE.Texture, maxSide: number): void {
   };
 }
 
-const FALLBACK_IDS = new Set(FALLBACK_WORKS.map((work) => work.id));
-
 /**
  * Hangs a maze's list, skipping any work another maze already showed. A
  * picture that fails to load gives way to the list's spare works, then to
- * the fallback images, first those not yet shown this visit, so a slow
- * museum or a dead API still leaves pictures without hanging the same eight
- * everywhere.
+ * the broken image icons, first those not yet shown this visit, so a slow
+ * museum or a dead API still leaves something on every wall.
  */
 export function hangWorks(options: {
   frames: FrameSlot[];
@@ -157,7 +154,7 @@ export function hangWorks(options: {
       (texture) => upload(slot, texture),
       undefined,
       () => {
-        if (!alive() || FALLBACK_IDS.has(work.id)) {
+        if (!alive() || isFallback(work)) {
           settle();
           return;
         }

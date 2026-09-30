@@ -1,8 +1,25 @@
 import { imageAllowed } from "../http";
 import { combineRegion } from "../region";
-import { asRecord, aspectOk, cleanText, httpUrl, type Getter, type RegionName, type WorkDraft } from "../types";
+import {
+  asRecord,
+  aspectOk,
+  cleanText,
+  httpUrl,
+  type Getter,
+  type Kind,
+  type RegionName,
+  type WorkDraft,
+} from "../types";
 
-const TYPES = new Set(["Painting", "Print", "Photograph"]);
+const TYPES: Record<string, Kind> = {
+  Painting: "painting",
+  Drawing: "drawing",
+  Print: "print",
+  Photograph: "photograph",
+  "Mixed Media": "painting",
+};
+
+export const CLEVELAND_TYPES = Object.keys(TYPES);
 
 export async function queryCleveland(options: {
   department: string;
@@ -13,7 +30,7 @@ export async function queryCleveland(options: {
   skip: number;
   get: Getter;
 }): Promise<WorkDraft[]> {
-  const types = [options.type, ...["Painting", "Print", "Photograph"].filter((type) => type !== options.type)];
+  const types = [options.type, ...CLEVELAND_TYPES.filter((type) => type !== options.type)];
   for (const type of types) {
     let rows = await search(options.get, options, type, options.skip);
     if (rows.length === 0 && options.skip > 0) rows = await search(options.get, options, type, 0);
@@ -50,8 +67,14 @@ async function search(
 
 function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | null {
   if (cleanText(row.share_license_status) !== "CC0") return null;
-  const type = cleanText(row.type);
-  if (!TYPES.has(type)) return null;
+  const base = TYPES[cleanText(row.type)];
+  if (!base) return null;
+  const technique = cleanText(row.technique);
+  const kind: Kind = /\bcollage\b/i.test(technique)
+    ? "collage"
+    : /\bposters?\b/i.test(`${cleanText(row.title)} ${technique}`)
+      ? "poster"
+      : base;
   const images = asRecord(row.images);
   const web = asRecord(images?.web);
   const imageUrl = httpUrl(web?.url).replace(/^http:\/\//i, "https://");
@@ -73,11 +96,12 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
   return {
     id: `cma-${id.toLowerCase().replace(/[^a-z0-9_-]+/g, "-")}`,
     source: "cleveland",
+    kind,
     title: cleanText(row.title) || "Untitled",
     artist,
     date: cleanText(row.creation_date),
     culture,
-    medium: cleanText(row.technique),
+    medium: technique,
     license: "CC0",
     credit: "The Cleveland Museum of Art",
     pageUrl: httpUrl(row.url),

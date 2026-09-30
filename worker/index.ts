@@ -33,7 +33,7 @@ async function handleWorks(url: URL, env: Env, ctx: ExecutionContext): Promise<R
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
-  const kvKey = `works:v2:${seed}`;
+  const kvKey = `works:v3:${seed}`;
   const stored = await env.ART.get(kvKey, "json");
   const fromKv = clientList(stored);
   if (fromKv && fromKv.length >= 12) {
@@ -102,7 +102,7 @@ function clientList(value: unknown): ClientWork[] | null {
     if (!IMAGE_ID.test(id) || image !== `/api/image/${id}`) return null;
     const aspect = typeof record.aspect === "number" ? record.aspect : Number.NaN;
     const license = record.license;
-    if (license !== "CC0" && license !== "CC BY" && license !== "Public domain") return null;
+    if (license !== "CC0" && license !== "CC BY" && license !== "CC BY-SA" && license !== "Public domain") return null;
     if (!Number.isFinite(aspect)) return null;
     works.push({
       id,

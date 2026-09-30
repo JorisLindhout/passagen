@@ -75,6 +75,9 @@ function lines(work: Work): HTMLParagraphElement[] {
     line("artist", work.artist || "Unknown"),
     line("title", work.title || "Untitled"),
     line("meta", [work.date, work.credit].filter(Boolean).join(" · ")),
-    line("license", work.license === "CC BY" ? `CC BY · ${work.artist}` : work.license),
+    line(
+      "license",
+      work.license === "CC BY" || work.license === "CC BY-SA" ? `${work.license} · ${work.artist}` : work.license,
+    ),
   ];
 }

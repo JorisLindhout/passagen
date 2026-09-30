@@ -1,11 +1,12 @@
 import { createGetter } from "./http";
+import { rejectReason } from "./kind";
 import { queryArtic } from "./sources/artic";
-import { queryCleveland } from "./sources/cleveland";
-import { COMMONS_ROOMS, queryCommons, type CommonsRoom } from "./sources/commons";
-import { queryMet } from "./sources/met";
-import { queryOpenverse } from "./sources/openverse";
+import { CLEVELAND_TYPES, queryCleveland } from "./sources/cleveland";
+import { COMMONS_ROOMS, COMMONS_WIDE, queryCommons, type CommonsRoom } from "./sources/commons";
+import { queryMet, type MetClassification } from "./sources/met";
+import { OPENVERSE_QUERIES, queryOpenverse } from "./sources/openverse";
 import { querySmithsonian } from "./sources/smithsonian";
-import { querySmk, type SmkKind } from "./sources/smk";
+import { querySmk, SMK_KINDS, type SmkKind } from "./sources/smk";
 import { queryWellcome } from "./sources/wellcome";
 import {
   artistKey,
@@ -16,18 +17,18 @@ import {
   type WorkDraft,
 } from "./types";
 
-type Rng = {
+export type Rng = {
   int(max: number): number;
   pick<T>(items: readonly T[]): T;
   shuffle<T>(items: readonly T[]): T[];
 };
 
-type Slot =
-  | { kind: "met"; departmentId: number; region: RegionName }
+export type Slot =
+  | { kind: "met"; departmentId: number; classification: MetClassification; region: RegionName }
   | { kind: "artic"; place: string; region: RegionName }
   | { kind: "cleveland"; department: string; region: RegionName; after: number; before: number; type: string }
   | { kind: "smithsonian"; unit: string; region: RegionName }
-  | { kind: "openverse"; query: "painting" | "print" | "photograph" }
+  | { kind: "openverse"; query: string }
   | { kind: "smk"; smk: SmkKind }
   | { kind: "wellcome"; query: string; region: RegionName; pages: number }
   | { kind: "commons"; room: CommonsRoom };
@@ -44,20 +45,21 @@ const WELLCOME: { query: string; region: RegionName; pages: number }[] = [
   { query: "oil painting", region: "europe", pages: 10 },
 ];
 
-const MET_DEPARTMENTS: { id: number; region: RegionName }[] = [
-  { id: 11, region: "europe" },
-  { id: 6, region: "asia" },
-  { id: 10, region: "africa" },
-  { id: 14, region: "asia" },
-  { id: 5, region: "unknown" },
-  { id: 19, region: "unknown" },
-  { id: 1, region: "americas" },
-  { id: 21, region: "unknown" },
-  { id: 9, region: "unknown" },
-  { id: 13, region: "europe" },
+/** Classifications with at least a few dozen public-domain works in the department. */
+const MET_DEPARTMENTS: { id: number; region: RegionName; classifications: MetClassification[] }[] = [
+  { id: 11, region: "europe", classifications: ["Paintings"] },
+  { id: 6, region: "asia", classifications: ["Paintings", "Prints"] },
+  { id: 10, region: "africa", classifications: ["Paintings", "Drawings"] },
+  { id: 14, region: "asia", classifications: ["Paintings"] },
+  { id: 5, region: "unknown", classifications: ["Paintings", "Photographs", "Drawings", "Prints"] },
+  { id: 19, region: "unknown", classifications: ["Photographs"] },
+  { id: 1, region: "americas", classifications: ["Paintings", "Drawings"] },
+  { id: 21, region: "unknown", classifications: ["Paintings", "Drawings", "Prints", "Photographs"] },
+  { id: 9, region: "unknown", classifications: ["Drawings", "Prints", "Photographs"] },
+  { id: 13, region: "europe", classifications: ["Paintings"] },
 ];
 
-const MET_QUERIES = ["painting", "portrait", "landscape", "flower", "bird", "figure", "vessel", "textile", "print"];
+const MET_QUERIES = ["portrait", "landscape", "flower", "bird", "figure", "river", "woman", "city"];
 
 const PLACES: { place: string; region: RegionName }[] = [
   { place: "China", region: "asia" },
@@ -90,6 +92,7 @@ const CLEVELAND: { name: string; region: RegionName }[] = [
   { name: "American Painting and Sculpture", region: "americas" },
   { name: "Oceania", region: "oceania" },
   { name: "Prints", region: "unknown" },
+  { name: "Drawings", region: "unknown" },
   { name: "Photography", region: "unknown" },
 ];
 
@@ -122,7 +125,6 @@ const FORCED_CLEVELAND = [
   "Oceania",
 ];
 const FORCED_SMITHSONIAN = ["NMAfA", "NMAA"];
-const CLEVELAND_TYPES = ["Painting", "Print", "Photograph"];
 
 const LIST_SIZE = 12;
 /** Spare searches run alongside the twelve, so an empty or stalled one is covered without another round trip. */
@@ -143,10 +145,16 @@ export async function chooseWorks(seed: string, apiKey: string | undefined): Pro
   const usedIds = new Set<string>();
   const usedArtists = new Set<string>();
   const works: WorkDraft[] = [];
+  const rejected: Record<string, number> = {};
 
   const accept = (work: WorkDraft) => {
     if (!work.id || !work.imageUrl || !aspectOk(work.aspect)) return false;
-    if (work.license === "CC BY" && !artistKey(work.artist)) return false;
+    const reason = rejectReason(work);
+    if (reason) {
+      const key = `${work.source}: ${reason}`;
+      rejected[key] = (rejected[key] ?? 0) + 1;
+      return false;
+    }
     if (usedIds.has(work.id)) return false;
     const artist = artistKey(work.artist);
     if (artist && usedArtists.has(artist)) return false;
@@ -217,6 +225,7 @@ export async function chooseWorks(seed: string, apiKey: string | undefined): Pro
     works[index] = replacement;
   }
 
+  if (Object.keys(rejected).length > 0) console.log(JSON.stringify({ message: "works rejected", seed, rejected }));
   return works.slice(0, LIST_SIZE);
 }
 
@@ -274,10 +283,11 @@ export function toClient(work: WorkDraft): ClientWork {
 
 /**
  * Twelve searches per list: half from the US museums and Openverse, half from
- * SMK, Wellcome, and museums across Asia, Latin America, Oceania, and Africa
- * by way of Wikimedia Commons.
+ * SMK, Wellcome, and museums across Asia, Latin America, and Oceania by way
+ * of Wikimedia Commons, plus one Commons room of photographs, collages, or
+ * digital work.
  */
-function buildSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
+export function buildSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
   const articCount = hasSmithsonian ? 1 : 2;
   const met = ensureOutside(rng.shuffle(MET_DEPARTMENTS).slice(0, 2), MET_DEPARTMENTS);
   const places = ensureOutside(rng.shuffle(PLACES).slice(0, articCount), PLACES);
@@ -285,9 +295,9 @@ function buildSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
   const windows = rng.shuffle(WINDOWS);
   const units = hasSmithsonian ? rng.shuffle(SMITHSONIAN).slice(0, 1) : [];
   const wellcome = rng.shuffle(WELLCOME).slice(0, 2);
-  const rooms = rng.shuffle(COMMONS_ROOMS).slice(0, 3);
+  const rooms = [...rng.shuffle(COMMONS_ROOMS).slice(0, 2), rng.pick(COMMONS_WIDE)];
   const slots: Slot[] = [
-    ...met.map((item) => ({ kind: "met" as const, departmentId: item.id, region: item.region })),
+    ...met.map((item) => metSlot(rng, item)),
     ...places.map((item) => ({ kind: "artic" as const, place: item.place, region: item.region })),
     ...cleveland.map((item, index) => ({
       kind: "cleveland" as const,
@@ -298,20 +308,35 @@ function buildSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
       type: CLEVELAND_TYPES[index] ?? "Painting",
     })),
     ...units.map((item) => ({ kind: "smithsonian" as const, unit: item.code, region: item.region })),
-    { kind: "openverse", query: rng.pick(["painting", "print", "photograph"] as const) },
-    { kind: "smk", smk: rng.int(3) === 0 ? "any" : "painting" },
+    { kind: "openverse", query: rng.pick(OPENVERSE_QUERIES) },
+    { kind: "smk", smk: smkKind(rng) },
     ...wellcome.map((item) => ({ kind: "wellcome" as const, ...item })),
     ...rooms.map((room) => ({ kind: "commons" as const, room })),
   ];
   return slots;
 }
 
-async function loadSlot(slot: Slot, rng: Rng, get: Getter, apiKey: string): Promise<WorkDraft[]> {
+function metSlot(rng: Rng, department: (typeof MET_DEPARTMENTS)[number]): Slot {
+  return {
+    kind: "met",
+    departmentId: department.id,
+    classification: rng.pick(department.classifications),
+    region: department.region,
+  };
+}
+
+/** Paintings half the time; SMK's prints and drawings would otherwise fill most of its turns. */
+function smkKind(rng: Rng): SmkKind {
+  return rng.int(2) === 0 ? "painting" : rng.pick(SMK_KINDS.filter((kind) => kind !== "painting"));
+}
+
+export async function loadSlot(slot: Slot, rng: Rng, get: Getter, apiKey: string): Promise<WorkDraft[]> {
   try {
     switch (slot.kind) {
       case "met":
         return await queryMet({
           departmentId: slot.departmentId,
+          classification: slot.classification,
           region: slot.region,
           q: rng.pick(MET_QUERIES),
           get,
@@ -388,13 +413,13 @@ async function fillFromAnother(
   return null;
 }
 
-function backupSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
+export function backupSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
   const met = rng.pick(MET_DEPARTMENTS);
   const place = rng.pick(PLACES);
   const cleveland = rng.pick(CLEVELAND);
   const window = rng.pick(WINDOWS);
   const slots: Slot[] = [
-    { kind: "met", departmentId: met.id, region: met.region },
+    metSlot(rng, met),
     { kind: "artic", place: place.place, region: place.region },
     {
       kind: "cleveland",
@@ -404,11 +429,11 @@ function backupSlots(rng: Rng, hasSmithsonian: boolean): Slot[] {
       before: window.before,
       type: rng.pick(CLEVELAND_TYPES),
     },
-    { kind: "openverse", query: rng.pick(["painting", "print", "photograph"]) },
-    { kind: "smk", smk: "painting" },
+    { kind: "openverse", query: rng.pick(OPENVERSE_QUERIES) },
+    { kind: "smk", smk: smkKind(rng) },
     { kind: "wellcome", ...rng.pick(WELLCOME) },
     { kind: "commons", room: rng.pick(COMMONS_ROOMS) },
-    { kind: "commons", room: rng.pick(COMMONS_ROOMS) },
+    { kind: "commons", room: rng.pick(COMMONS_WIDE) },
   ];
   if (hasSmithsonian) {
     const unit = rng.pick(SMITHSONIAN);
@@ -424,16 +449,13 @@ async function forcedReplacement(
   deadline: number,
   takeFrom: (list: WorkDraft[], allowEurope: boolean) => WorkDraft | null,
 ): Promise<WorkDraft | null> {
-  const metRegions: Record<number, RegionName> = { 6: "asia", 5: "unknown", 10: "africa", 14: "asia" };
   const candidates: Slot[] = [
     ...rng.shuffle(COMMONS_ROOMS)
       .slice(0, 2)
       .map((room) => ({ kind: "commons" as const, room })),
-    ...rng.shuffle(FORCED_MET).map((departmentId) => ({
-      kind: "met" as const,
-      departmentId,
-      region: metRegions[departmentId] ?? "unknown",
-    })),
+    ...rng
+      .shuffle(MET_DEPARTMENTS.filter((department) => FORCED_MET.includes(department.id)))
+      .map((department) => metSlot(rng, department)),
     ...rng.shuffle(FORCED_CLEVELAND)
       .slice(0, 3)
       .map((department) => {
@@ -476,7 +498,7 @@ function ensureOutside<T extends { region: RegionName }>(picked: T[], pool: read
   return next;
 }
 
-function makeRng(seed: string): Rng {
+export function makeRng(seed: string): Rng {
   let state = hashSeed(seed) || 0x6d2b79f5;
   const next = () => {
     state |= 0;

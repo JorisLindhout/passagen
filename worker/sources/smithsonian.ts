@@ -1,6 +1,31 @@
 import { aspectFromDimensions, aspectFromPair, imageAllowed } from "../http";
 import { combineRegion } from "../region";
-import { asRecord, aspectOk, cleanText, httpUrl, type Getter, type RegionName, type WorkDraft } from "../types";
+import {
+  asRecord,
+  aspectOk,
+  cleanText,
+  httpUrl,
+  type Getter,
+  type Kind,
+  type RegionName,
+  type WorkDraft,
+} from "../types";
+
+/** The American Indian museum files its flat works as "Painting/Drawing/Print". */
+const FLAT_TYPES = [
+  "Paintings",
+  "Drawings",
+  "Prints",
+  "Photographs",
+  '"Graphic arts"',
+  "Posters",
+  '"Collages (visual works)"',
+  '"Painting/Drawing/Print"',
+];
+
+/** Cooper Hewitt's drawings include furniture and interior designs; those and bound volumes stay out. */
+const NOT_FLAT =
+  /architectur|furniture|interior views|bound print|albums|books|manuscripts|wall coverings|textiles|sculpture|vessels|ceramics|jewelry|costume/i;
 
 export async function querySmithsonian(options: {
   unit: string;
@@ -25,7 +50,8 @@ export async function querySmithsonian(options: {
 
 async function search(get: Getter, unit: string, start: number, apiKey: string): Promise<Record<string, unknown>[]> {
   const url = new URL("https://api.si.edu/openaccess/api/v1.0/search");
-  url.searchParams.set("q", `unit_code:${unit} AND online_media_type:Images`);
+  const types = FLAT_TYPES.map((type) => `object_type:${type}`).join(" OR ");
+  url.searchParams.set("q", `unit_code:${unit} AND online_media_type:Images AND (${types})`);
   url.searchParams.set("rows", "20");
   url.searchParams.set("start", String(start));
   url.searchParams.set("api_key", apiKey);
@@ -44,6 +70,8 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
   const recordId = cleanText(descriptive?.record_ID) || cleanText(row.id);
   const slug = recordId.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
   if (!slug) return null;
+  const kind = smithsonianKind(indexed?.object_type);
+  if (!kind) return null;
   const media = mediaList(descriptive);
   let imageUrl = "";
   let aspect: number | null = null;
@@ -69,6 +97,7 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
   return {
     id: `si-${slug}`.slice(0, 80),
     source: "smithsonian",
+    kind,
     title: textContent(descriptive?.title) || cleanText(row.title) || "Untitled",
     artist,
     date: labeled(freetext?.date, "Date") || firstString(indexed?.date),
@@ -82,6 +111,19 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
     thumbHost: null,
     region: combineRegion(region, `${culture} ${dataSource}`),
   };
+}
+
+function smithsonianKind(value: unknown): Kind | null {
+  const types = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const joined = types.join(" / ");
+  if (!joined || NOT_FLAT.test(joined)) return null;
+  if (/poster/i.test(joined)) return "poster";
+  if (/collage/i.test(joined)) return "collage";
+  if (/photograph/i.test(joined)) return "photograph";
+  if (/painting/i.test(joined)) return "painting";
+  if (/drawing/i.test(joined)) return "drawing";
+  if (/prints|graphic arts/i.test(joined)) return "print";
+  return null;
 }
 
 /**

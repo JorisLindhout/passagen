@@ -5,9 +5,20 @@ import {
   aspectOk,
   cleanText,
   type Getter,
+  type Kind,
   type RegionName,
   type WorkDraft,
 } from "../types";
+
+/** Of the public-domain records, about 40,000 are these; the rest are textiles, ceramics, coins, arms and the like. */
+const TYPES: Record<string, Kind> = {
+  Painting: "painting",
+  "Miniature Painting": "painting",
+  "Drawing and Watercolor": "drawing",
+  Print: "print",
+  Photograph: "photograph",
+  "Mixed Media": "painting",
+};
 
 export async function queryArtic(options: {
   place: string;
@@ -29,11 +40,14 @@ async function search(get: Getter, place: string, page: number): Promise<Record<
   const url = new URL("https://api.artic.edu/api/v1/artworks/search");
   url.searchParams.set("query[bool][must][0][term][is_public_domain]", "true");
   url.searchParams.set("query[bool][must][1][match][place_of_origin]", place);
+  Object.keys(TYPES).forEach((type, index) => {
+    url.searchParams.set(`query[bool][must][2][terms][artwork_type_title.keyword][${index}]`, type);
+  });
   url.searchParams.set("limit", "20");
   url.searchParams.set("page", String(page));
   url.searchParams.set(
     "fields",
-    "id,title,image_id,artist_title,artist_display,date_display,place_of_origin,medium_display,thumbnail",
+    "id,title,image_id,artist_title,artist_display,date_display,place_of_origin,medium_display,thumbnail,artwork_type_title,classification_titles",
   );
   const body = asRecord(await get(url.toString()));
   const data = body?.data;
@@ -45,6 +59,8 @@ function toDraft(row: Record<string, unknown>, expectedPlace: string, region: Re
   const imageId = cleanText(row.image_id);
   const id = typeof row.id === "number" ? row.id : Number(row.id);
   if (!imageId || !Number.isFinite(id)) return null;
+  const kind = articKind(row);
+  if (!kind) return null;
   const place = cleanText(row.place_of_origin);
   const found = classifyRegion(`${place} ${expectedPlace}`);
   if (found !== "unknown" && region !== "unknown" && found !== region && classifyRegion(place) !== region) {
@@ -63,6 +79,7 @@ function toDraft(row: Record<string, unknown>, expectedPlace: string, region: Re
   return {
     id: `artic-${id}`,
     source: "artic",
+    kind,
     title: cleanText(row.title) || "Untitled",
     artist,
     date: cleanText(row.date_display),
@@ -76,6 +93,18 @@ function toDraft(row: Record<string, unknown>, expectedPlace: string, region: Re
     thumbHost: null,
     region: combineRegion(region, place),
   };
+}
+
+function articKind(row: Record<string, unknown>): Kind | null {
+  const base = TYPES[cleanText(row.artwork_type_title)];
+  if (!base) return null;
+  const classes = Array.isArray(row.classification_titles)
+    ? row.classification_titles.filter((item): item is string => typeof item === "string").join(" ")
+    : "";
+  const described = `${classes} ${cleanText(row.medium_display)}`;
+  if (/\bposters?\b/i.test(classes)) return "poster";
+  if (/\bcollage\b/i.test(described)) return "collage";
+  return base;
 }
 
 function firstLine(value: string): string {

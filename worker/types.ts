@@ -8,13 +8,17 @@ export type SourceName =
   | "wellcome"
   | "commons";
 
-export type LicenseName = "CC0" | "CC BY" | "Public domain";
+export type LicenseName = "CC0" | "CC BY" | "CC BY-SA" | "Public domain";
 
 export type RegionName = "europe" | "asia" | "africa" | "americas" | "oceania" | "unknown";
+
+/** Flat work made to hang or be framed; anything a source cannot place here stays out. */
+export type Kind = "painting" | "drawing" | "print" | "poster" | "photograph" | "collage" | "digital";
 
 export type WorkDraft = {
   id: string;
   source: SourceName;
+  kind: Kind;
   title: string;
   artist: string;
   date: string;
@@ -51,10 +55,18 @@ export type Sampler = { int(max: number): number };
 export function artistKey(name: string): string | null {
   const key = name.trim().toLowerCase().replace(/\s+/g, " ");
   if (!key) return null;
-  if (/^(unknown|anonymous|unidentified|unidentified artist|artist unknown|unknown author|n\/a|none)$/.test(key)) {
+  if (
+    /^(unknown|anonymous|unidentified|(unidentified|unknown) (artist|author|photographer|maker)|artist unknown|n\/a|none|myself|me|self|own work)$/.test(
+      key,
+    )
+  ) {
     return null;
   }
   return key;
+}
+
+export function needsAttribution(license: LicenseName): boolean {
+  return license === "CC BY" || license === "CC BY-SA";
 }
 
 export function aspectOk(aspect: number): boolean {

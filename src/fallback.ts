@@ -146,9 +146,9 @@ export function sanitizeWorks(value: unknown): Work[] {
     const aspect = typeof record.aspect === "number" ? record.aspect : Number.NaN;
     if (!Number.isFinite(aspect) || aspect < 0.45 || aspect > 2.25) continue;
     const license = typeof record.license === "string" ? record.license : "";
-    if (license !== "CC0" && license !== "CC BY" && license !== "Public domain") continue;
+    if (license !== "CC0" && license !== "CC BY" && license !== "CC BY-SA" && license !== "Public domain") continue;
     const artist = text(record.artist);
-    if (license === "CC BY" && !artist) continue;
+    if ((license === "CC BY" || license === "CC BY-SA") && !artist) continue;
     const id = text(record.id);
     if (!id) continue;
     works.push({

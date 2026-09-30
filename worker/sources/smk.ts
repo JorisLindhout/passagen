@@ -1,11 +1,36 @@
 import { imageAllowed } from "../http";
 import { combineRegion } from "../region";
+import { kindFromText } from "../kind";
 import { asRecord, aspectOk, cleanText, httpUrl, type Getter, type WorkDraft } from "../types";
 
-/** Public-domain works with images: about 4,600 paintings among some 39,000 objects. */
-const SIZE = { painting: 4600, any: 39000 } as const;
+/** Public-domain works with images, by object name; statues, busts, medals and reliefs make up most of the rest. */
+const SIZE = { painting: 4600, print: 16500, drawing: 13900, gouache: 650, watercolour: 400 } as const;
 
 export type SmkKind = keyof typeof SIZE;
+
+export const SMK_KINDS = Object.keys(SIZE) as SmkKind[];
+
+const NOT_FLAT = new Set([
+  "relief",
+  "statue",
+  "bust",
+  "medal",
+  "head",
+  "statuette",
+  "column",
+  "group of statuettes",
+  "herma",
+  "group of statues",
+  "sculpture",
+  "sculpture in the round",
+  "sculpture related to architecture",
+  "torso",
+  "mirror case",
+  "medallion",
+  "seal",
+  "table",
+  "book-craft",
+]);
 
 export async function querySmk(options: { kind: SmkKind; pick: number; get: Getter }): Promise<WorkDraft[]> {
   const offset = Math.floor((options.pick * SIZE[options.kind]) / 20) * 20;
@@ -20,8 +45,7 @@ export async function querySmk(options: { kind: SmkKind; pick: number; get: Gett
 }
 
 async function search(get: Getter, kind: SmkKind, offset: number): Promise<Record<string, unknown>[]> {
-  const filters = ["[has_image:true]", "[public_domain:true]"];
-  if (kind === "painting") filters.push("[object_names:painting]");
+  const filters = ["[has_image:true]", "[public_domain:true]", `[object_names:${kind}]`];
   const url = new URL("https://api.smk.dk/api/v1/art/search/");
   url.searchParams.set("keys", "*");
   url.searchParams.set("filters", filters.join(","));
@@ -36,6 +60,13 @@ async function search(get: Getter, kind: SmkKind, offset: number): Promise<Recor
 
 function toDraft(row: Record<string, unknown>): WorkDraft | null {
   if (row.public_domain !== true) return null;
+  const names = Array.isArray(row.object_names)
+    ? row.object_names.map((entry) => cleanText(asRecord(entry)?.name).toLowerCase()).filter(Boolean)
+    : [];
+  if (names.some((name) => NOT_FLAT.has(name))) return null;
+  const techniques = Array.isArray(row.techniques) ? row.techniques : [];
+  const kind = kindFromText(names.join(", ")) ?? kindFromText(cleanText(techniques[0]));
+  if (!kind) return null;
   const imageUrl = imageFor(cleanText(row.image_thumbnail, 400));
   if (!imageUrl || !imageAllowed(imageUrl, null, "smk")) return null;
   const width = Number(row.image_width);
@@ -50,10 +81,10 @@ function toDraft(row: Record<string, unknown>): WorkDraft | null {
   const nationality = cleanText(production?.creator_nationality);
   const dates = asRecord(Array.isArray(row.production_date) ? row.production_date[0] : null);
   const titles = Array.isArray(row.titles) ? row.titles.map((title) => asRecord(title)) : [];
-  const techniques = Array.isArray(row.techniques) ? row.techniques : [];
   return {
     id: `smk-${slug}`.slice(0, 80),
     source: "smk",
+    kind,
     title: cleanText(titles[0]?.title) || "Untitled",
     artist: personName(cleanText(production?.creator)),
     date: cleanText(dates?.period),

@@ -22,8 +22,7 @@ import { buildChunkView, type ChunkView, type FrameSlot, type Stage } from "./wo
 const BUILD_REACH = 2;
 /**
  * Works asked for beyond a maze's frames: for ones another maze hung while
- * this one was asking, and for pictures that fail to load. Wellcome's image
- * server alone leaves one frame in five or so without a picture.
+ * this one was asking, and for pictures that fail to load.
  */
 const SPARE_WORKS = 12;
 const OPENING_WAIT_MS = 15000;

@@ -61,7 +61,8 @@ function toDraft(row: Record<string, unknown>, region: RegionName): WorkDraft | 
   if (!license) return null;
   const info = cleanText(location?.url, 400);
   if (!info.endsWith("/info.json")) return null;
-  const imageUrl = `${info.slice(0, -"/info.json".length)}/full/800,/0/default.jpg`;
+  // Only the sizes listed in info.json are kept rendered; any other size is drawn on request and can take over 30 s.
+  const imageUrl = `${info.slice(0, -"/info.json".length)}/full/!1024,1024/0/default.jpg`;
   if (!imageAllowed(imageUrl, null, "wellcome")) return null;
 
   const work = asRecord(row.source);

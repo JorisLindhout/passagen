@@ -1,7 +1,42 @@
 :root {
-  color: #2c2926;
-  background: #f3f0ea;
-  font-family: "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+  --color-wall: #f3f0ea;
+  --color-wall-shade: #e9e4db;
+  --color-ink: #2c2926;
+  --color-ink-soft: #5e584f;
+  --color-ink-faint: #8a8379;
+
+  --font-sans: "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --text-xs: 0.78rem;
+  --text-sm: 0.82rem;
+  --text-md: 0.9rem;
+  --text-lg: 1.05rem;
+  --text-xl: 1.2rem;
+  --leading: 1.45;
+  --tracking: 0.03em;
+  --tracking-wide: 0.04em;
+
+  --space-2xs: 0.2rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.25rem;
+  --space-xl: 1.5rem;
+
+  --measure: 26rem;
+  --measure-narrow: 22rem;
+  --tap-target: 44px;
+  --radius-pill: 999px;
+  --stick-size: 132px;
+  --knob-size: 48px;
+
+  --duration-fast: 0.25s;
+  --duration: 0.35s;
+  --ease: ease;
+
+  color: var(--color-ink);
+  background: var(--color-wall);
+  font-family: var(--font-sans);
 }
 
 html,
@@ -14,7 +49,7 @@ body {
   inset: 0;
   touch-action: none;
   overscroll-behavior: none;
-  background: #f3f0ea;
+  background: var(--color-wall);
 }
 
 #app {
@@ -39,9 +74,9 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.25rem;
-  padding: 1.5rem;
-  background: #f3f0ea;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  background: var(--color-wall);
   text-align: center;
 }
 
@@ -51,13 +86,13 @@ body {
 
 #gate p {
   margin: 0;
-  max-width: 26rem;
-  font-size: 1.05rem;
-  line-height: 1.45;
+  max-width: var(--measure);
+  font-size: var(--text-lg);
+  line-height: var(--leading);
 }
 
 #epigraph {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-md);
 }
 
 #epigraph blockquote {
@@ -65,21 +100,21 @@ body {
 }
 
 #epigraph p {
-  max-width: 22rem;
-  font: italic 1.2rem/1.45 Georgia, "Times New Roman", serif;
+  max-width: var(--measure-narrow);
+  font: italic var(--text-xl) / var(--leading) var(--font-serif);
 }
 
 #epigraph figcaption {
-  margin-top: 0.5rem;
-  font-size: 0.82rem;
-  letter-spacing: 0.04em;
-  color: #5e584f;
+  margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-ink-soft);
 }
 
 #gate #touch-hint {
   display: none;
-  font-size: 0.9rem;
-  color: #5e584f;
+  font-size: var(--text-md);
+  color: var(--color-ink-soft);
 }
 
 @media (pointer: coarse) {
@@ -89,25 +124,25 @@ body {
 }
 
 #walk {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.75rem 1.6rem;
-  border: 1px solid #2c2926;
-  border-radius: 999px;
+  min-width: var(--tap-target);
+  min-height: var(--tap-target);
+  padding: var(--space-sm) var(--space-xl);
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-pill);
   background: transparent;
   color: inherit;
   font: inherit;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-wide);
   cursor: pointer;
 }
 
 #walk:hover:not(:disabled) {
-  background: rgba(44, 41, 38, 0.06);
+  background: color-mix(in srgb, var(--color-ink) 6%, transparent);
 }
 
 #walk:disabled {
-  border-color: rgba(44, 41, 38, 0.25);
-  color: #8a8379;
+  border-color: color-mix(in srgb, var(--color-ink) 25%, transparent);
+  color: var(--color-ink-faint);
   cursor: default;
 }
 
@@ -115,18 +150,18 @@ body {
   width: 9rem;
   height: 2px;
   overflow: hidden;
-  background: rgba(44, 41, 38, 0.12);
-  transition: opacity 0.4s ease;
+  background: color-mix(in srgb, var(--color-ink) 12%, transparent);
+  transition: opacity var(--duration) var(--ease);
 }
 
 #loading span {
   display: block;
   width: 100%;
   height: 100%;
-  background: #2c2926;
+  background: var(--color-ink);
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 0.3s ease;
+  transition: transform var(--duration) var(--ease);
 }
 
 #loading.done {
@@ -136,38 +171,38 @@ body {
 #plaque {
   position: fixed;
   z-index: 2;
-  right: max(1rem, env(safe-area-inset-right));
-  bottom: max(1rem, env(safe-area-inset-bottom));
+  right: max(var(--space-md), env(safe-area-inset-right));
+  bottom: max(var(--space-md), env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-xs);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   transition:
-    opacity 0.35s ease,
-    visibility 0s linear 0.35s;
+    opacity var(--duration) var(--ease),
+    visibility 0s linear var(--duration);
 }
 
 #plaque.show {
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.35s ease;
+  transition: opacity var(--duration) var(--ease);
 }
 
 #plaque-text {
-  width: min(22rem, calc(100vw - 2rem));
+  width: min(var(--measure-narrow), calc(100vw - 2 * var(--space-md)));
   box-sizing: border-box;
-  padding: 0.8rem 1rem 0.9rem;
-  background: rgba(243, 240, 234, 0.94);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  background: color-mix(in srgb, var(--color-wall) 94%, transparent);
   pointer-events: none;
   transform-origin: bottom right;
   transform: scale(0.2);
   opacity: 0;
   transition:
-    transform 0.35s ease,
-    opacity 0.25s ease;
+    transform var(--duration) var(--ease),
+    opacity var(--duration-fast) var(--ease);
 }
 
 #plaque.open #plaque-text {
@@ -178,65 +213,65 @@ body {
 #plaque:not(.open) #plaque-text {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 0.5rem);
+  bottom: calc(100% + var(--space-xs));
 }
 
 #plaque p {
-  margin: 0.18rem 0;
+  margin: var(--space-2xs) 0;
 }
 
 #plaque-toggle {
-  width: 44px;
-  height: 44px;
+  width: var(--tap-target);
+  height: var(--tap-target);
   padding: 0;
-  border: 1px solid rgba(44, 41, 38, 0.35);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 35%, transparent);
   border-radius: 50%;
-  background: rgba(243, 240, 234, 0.9);
-  color: #5e584f;
-  font: italic 1.05rem/1 Georgia, "Times New Roman", serif;
+  background: color-mix(in srgb, var(--color-wall) 90%, transparent);
+  color: var(--color-ink-soft);
+  font: italic var(--text-lg) / 1 var(--font-serif);
   cursor: pointer;
   pointer-events: auto;
 }
 
 #plaque.open #plaque-toggle {
-  color: #2c2926;
-  border-color: rgba(44, 41, 38, 0.6);
+  color: var(--color-ink);
+  border-color: color-mix(in srgb, var(--color-ink) 60%, transparent);
 }
 
 #plaque-toggle:hover {
-  background: rgba(233, 228, 219, 0.95);
+  background: color-mix(in srgb, var(--color-wall-shade) 95%, transparent);
 }
 
 #plaque-toggle:focus-visible {
-  outline: 2px solid #2c2926;
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
 }
 
 #plaque .artist {
-  font-size: 0.82rem;
-  letter-spacing: 0.03em;
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking);
 }
 
 #plaque .title {
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
 }
 
 #plaque .meta,
 #plaque .license {
-  font-size: 0.78rem;
-  color: #5e584f;
+  font-size: var(--text-xs);
+  color: var(--color-ink-soft);
 }
 
 #stick {
   position: fixed;
   z-index: 1;
-  width: 132px;
-  height: 132px;
-  margin: -66px 0 0 -66px;
-  border: 1px solid rgba(44, 41, 38, 0.18);
+  width: var(--stick-size);
+  height: var(--stick-size);
+  margin: calc(var(--stick-size) / -2) 0 0 calc(var(--stick-size) / -2);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
   border-radius: 50%;
   box-sizing: border-box;
-  background: rgba(243, 240, 234, 0.18);
+  background: color-mix(in srgb, var(--color-wall) 18%, transparent);
   pointer-events: none;
 }
 
@@ -248,11 +283,11 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
+  width: var(--knob-size);
+  height: var(--knob-size);
+  margin: calc(var(--knob-size) / -2) 0 0 calc(var(--knob-size) / -2);
   border-radius: 50%;
-  background: rgba(44, 41, 38, 0.3);
+  background: color-mix(in srgb, var(--color-ink) 30%, transparent);
 }
 
 @media (pointer: fine) {

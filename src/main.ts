@@ -10,6 +10,13 @@ import { createStage } from "./world";
 const SEED_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 /** A slow image host should not keep anyone at the door. */
 const LOAD_LIMIT_MS = 15000;
+/**
+ * Longest side of a corridor picture on the GPU. Five mazes of thirty
+ * pictures stay loaded, which at 640 px is about 250 MB, within what a
+ * phone's browser allows a tab.
+ */
+const PHONE_PICTURE_SIDE = 640;
+const DESKTOP_PICTURE_SIDE = 1024;
 const mobile = window.matchMedia("(pointer: coarse)").matches;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -48,7 +55,10 @@ const showProgress = (fraction: number) => {
 const chain = createChain(
   seed,
   world,
-  Math.min(8, world.renderer.capabilities.getMaxAnisotropy()),
+  {
+    anisotropy: Math.min(8, world.renderer.capabilities.getMaxAnisotropy()),
+    maxSide: mobile ? PHONE_PICTURE_SIDE : DESKTOP_PICTURE_SIDE,
+  },
   showProgress,
 );
 void Promise.race([chain.ready, new Promise((resolve) => setTimeout(resolve, LOAD_LIMIT_MS))]).then(() => {

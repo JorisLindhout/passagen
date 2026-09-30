@@ -8,7 +8,7 @@ export type HangSpot = {
   scale: number;
 };
 
-export const WORKS_PER_MAZE = 20;
+export const WORKS_PER_MAZE = 30;
 const FRAME_INSET = 0.04;
 /** Center to center, so two frames never share a cell or crowd a corner. */
 const MIN_GAP = 3.4;
@@ -35,12 +35,12 @@ export function frameSize(aspect: number, scale = 1): { w: number; h: number } {
 }
 
 /**
- * Up to twenty hang points in one maze, in local meters. First the back wall
+ * Up to thirty hang points in one maze, in local meters. First the back wall
  * of each dead end, then the wall a corridor runs into at a turn or a T, seen
  * from the longest approach, then the straight runs, one wall per run, every
  * other cell. The gaps in the outer wall count as floor, so nothing hangs
  * across a passage. A hall's own walls come first and do not count toward
- * the twenty.
+ * the thirty.
  */
 export function hangSpots(plan: ChunkPlan, seed: string): HangSpot[] {
   const hall = plan.hall ? hallSpots(plan, plan.hall, seed) : [];

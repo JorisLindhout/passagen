@@ -17,8 +17,9 @@ const API_IMAGE = /^\/api\/image\/[a-z0-9][a-z0-9_-]{0,120}$/;
 
 /**
  * Eight stable Met Open Access images. The museum releases these public-domain
- * works as CC0, and images.metmuseum.org sends Access-Control-Allow-Origin.
- * Used only when /api/works cannot fill the walls.
+ * works as CC0. The files ship in public/fallback because images.metmuseum.org
+ * no longer sends Access-Control-Allow-Origin.
+ * Used when /api/works cannot fill the walls or a museum image fails to load.
  */
 export const FALLBACK_WORKS: Work[] = [
   {
@@ -33,7 +34,7 @@ export const FALLBACK_WORKS: Work[] = [
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/51868",
     aspect: 1.2398,
-    image: "https://images.metmuseum.org/CRDImages/as/web-large/DP154393.jpg",
+    image: "/fallback/met-51868.jpg",
   },
   {
     id: "met-544502",
@@ -47,7 +48,7 @@ export const FALLBACK_WORKS: Work[] = [
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/544502",
     aspect: 1,
-    image: "https://images.metmuseum.org/CRDImages/eg/web-large/DT256117.jpg",
+    image: "/fallback/met-544502.jpg",
   },
   {
     id: "met-436122",
@@ -61,7 +62,7 @@ export const FALLBACK_WORKS: Work[] = [
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/436122",
     aspect: 0.7547,
-    image: "https://images.metmuseum.org/CRDImages/ep/web-large/DP-25461-001.jpg",
+    image: "/fallback/met-436122.jpg",
   },
   {
     id: "met-311021",
@@ -74,8 +75,8 @@ export const FALLBACK_WORKS: Work[] = [
     license: "CC0",
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/311021",
-    aspect: 0.5385,
-    image: "https://images.metmuseum.org/CRDImages/ao/web-large/DP-25400-001.jpg",
+    aspect: 0.688,
+    image: "/fallback/met-311021.jpg",
   },
   {
     id: "met-453351",
@@ -89,7 +90,7 @@ export const FALLBACK_WORKS: Work[] = [
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/453351",
     aspect: 0.7027,
-    image: "https://images.metmuseum.org/CRDImages/is/web-large/DP234015.jpg",
+    image: "/fallback/met-453351.jpg",
   },
   {
     id: "met-286582",
@@ -103,7 +104,7 @@ export const FALLBACK_WORKS: Work[] = [
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/286582",
     aspect: 0.6643,
-    image: "https://images.metmuseum.org/CRDImages/ph/web-large/DP248323.jpg",
+    image: "/fallback/met-286582.jpg",
   },
   {
     id: "met-13997",
@@ -116,8 +117,8 @@ export const FALLBACK_WORKS: Work[] = [
     license: "CC0",
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/13997",
-    aspect: 1.0526,
-    image: "https://images.metmuseum.org/CRDImages/ad/web-large/ADA2474.jpg",
+    aspect: 1.2611,
+    image: "/fallback/met-13997.jpg",
   },
   {
     id: "met-249232",
@@ -130,8 +131,8 @@ export const FALLBACK_WORKS: Work[] = [
     license: "CC0",
     credit: "The Metropolitan Museum of Art",
     pageUrl: "https://www.metmuseum.org/art/collection/search/249232",
-    aspect: 1.8919,
-    image: "https://images.metmuseum.org/CRDImages/gr/web-large/DP138722.jpg",
+    aspect: 1.6339,
+    image: "/fallback/met-249232.jpg",
   },
 ];
 

@@ -32,6 +32,8 @@ export type FrameSlot = {
   center: THREE.Vector3;
   /** Meters within which the plaque appears. */
   reach: number;
+  /** 1 in the corridors, larger in a hall. */
+  scale: number;
   work: Work | null;
   setAspect: (aspect: number) => void;
 };
@@ -256,6 +258,7 @@ function makeFrame(parent: THREE.Group, spot: HangSpot): FrameSlot {
     facing: spot.facing,
     center: new THREE.Vector3(spot.x, HANG_Y, spot.z).add(parent.position),
     reach: PLAQUE_REACH * spot.scale,
+    scale: spot.scale,
     work: null,
     setAspect(aspect: number) {
       const y = buildFrame(group, material, aspect, spot.scale);
@@ -287,11 +290,12 @@ function buildFrame(group: THREE.Group, pictureMaterial: THREE.Material, aspect:
     { geometry: new THREE.BoxGeometry(bar, h, depth), x: -(w / 2 + bar / 2), y: 0 },
     { geometry: new THREE.BoxGeometry(bar, h, depth), x: w / 2 + bar / 2, y: 0 },
   ];
-  for (const part of parts) {
-    const mesh = new THREE.Mesh(part.geometry, materials.frame);
-    mesh.position.set(part.x, part.y, 0.01);
-    group.add(mesh);
-  }
+  const bars = mergeGeometries(
+    parts.map((part) => part.geometry.translate(part.x, part.y, 0.01)),
+    false,
+  );
+  for (const part of parts) part.geometry.dispose();
+  if (bars) group.add(new THREE.Mesh(bars, materials.frame));
   return Math.max(HANG_Y, h / 2 + MIN_FRAME_BOTTOM);
 }
 

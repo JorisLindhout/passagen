@@ -56,9 +56,11 @@ Every value lives in `DEFAULT_SOUND` in `src/sound.ts`. In development, settings
 
 ## Pictures
 
-Each maze hangs twenty frames: the back wall of every dead end, the wall a corridor runs into at a turn or a T, and then the straight runs, one wall per run. Frames stay at least 3.4 m apart.
+Each maze hangs thirty frames: the back wall of every dead end, the wall a corridor runs into at a turn or a T, and then the straight runs, one wall per run. Frames stay at least 3.4 m apart.
 
-A hall hangs its own walls on top of the twenty. Each hall picks a spacing between 2.7 and 4.6 m and a frame size 15 to 60% larger than in the corridors. Every stretch of wall between corners and doorways holds as many frames as fit at that spacing, evenly spread. Large frames hang higher so they stay at least 0.7 m off the floor, and their plaque appears from farther away. A hall asks for as many extra lists as its frames need, plus one to spare: `2k.1`, `2k.2`, and so on.
+A hall hangs its own walls on top of the thirty. Each hall picks a spacing between 2.7 and 4.6 m and a frame size 15 to 60% larger than in the corridors. Every stretch of wall between corners and doorways holds as many frames as fit at that spacing, evenly spread. Large frames hang higher so they stay at least 0.7 m off the floor, and their plaque appears from farther away.
+
+A maze asks for lists `2k` and `2k+1`, then `2k.1`, `2k.2`, and so on, until it has six works more than it has frames, to cover works the mazes before already showed. Thirty frames take three lists; a maze with a hall takes four or five.
 
 A list holds twelve works, one per search, and the searches run in parallel:
 
@@ -72,5 +74,7 @@ A list holds twelve works, one per search, and the searches run in parallel:
 - three from museum collections on [Wikimedia Commons](https://commons.wikimedia.org/): the Tokyo and Kyoto National Museums, the National Palace Museum in Taipei, the National Museum of Korea, the Museu Nacional de Belas Artes in Rio, the Pinacoteca and Museu Paulista in São Paulo, the Museo de Arte de Lima, the Museo Nacional de Colombia, Te Papa in Wellington, the State Library of New South Wales, and Nigerian works in museum collections
 
 Only public domain, CC0, and CC BY are kept; Commons files under share-alike licenses are skipped. If more than four in a list resolve to Europe, the extras are replaced from non-European sources. A maze skips any work the three mazes before it already showed. Each maze's lists are requested two mazes ahead, so the pictures are loaded before you arrive. A dead API still leaves eight known CC0 images on the walls, shipped in the client.
+
+The Walk button waits for the pictures in the first maze; the mazes around it start loading once they are up. Pictures go to the GPU as they arrive, a few per frame, while their maze is still out of sight. Left to the renderer, every picture of a maze that just came into view would upload in the same frame and stall the walk. On a phone each picture is redrawn with its longest side at 640 px (up to 800 px in a hall) and the copy freed once uploaded; on a desktop the limit is 1024 px. Five mazes are kept loaded, the one you are in and two each way, and the rest are dropped. At thirty frames a maze that is about 250 MB of textures on a phone.
 
 A plaque fades in within 2.2 m when the work is near the center of view. It sits in the bottom-right corner, stays open for four seconds, and then folds into a small "i" button. The button, or the I key while the pointer is locked, opens it again until you close it. Looking away and back at the same work brings back the button, not the full plaque. The text is a live region, so the title is not locked inside the canvas. CC BY plaques include the artist’s name.

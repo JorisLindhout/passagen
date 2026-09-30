@@ -1,4 +1,4 @@
-import { hangWorks, worksFor } from "./art";
+import { createUploader, hangWorks, worksFor } from "./art";
 import type { Work } from "./fallback";
 import { hangSpots } from "./hang";
 import {
@@ -13,19 +13,25 @@ import {
 } from "./maze";
 import { buildChunkView, type ChunkView, type FrameSlot, type Stage } from "./world";
 
-/** Mazes built ahead of and behind the one you are in. Only one step each way is visible. */
+/**
+ * Mazes built ahead of and behind the one you are in. Only one step each way
+ * is visible, but every built maze has its pictures on the GPU, so a maze is
+ * dropped as soon as it falls out of reach.
+ */
 const BUILD_REACH = 2;
-const KEEP_REACH = 3;
 const AVOID_BEHIND = 3;
 const LIST_LENGTH = 12;
+/** Works asked for beyond a maze's frames, for ones the mazes before already showed. */
+const SPARE_WORKS = 6;
 const OPENING_WAIT_MS = 15000;
 
 export type Chain = {
   spawn: { x: number; z: number; yaw: number };
   solid: (gx: number, gz: number) => boolean;
+  /** Call once per animation frame with where you stand. */
   update: (x: number, z: number) => void;
   frames: () => FrameSlot[];
-  /** Settles once every picture visible from the spawn is up or has failed. */
+  /** Settles once every picture in the first maze is up or has failed. */
   ready: Promise<void>;
 };
 
@@ -40,9 +46,10 @@ type Built = { view: ChunkView; alive: boolean };
 export function createChain(
   seed: string,
   stage: Stage,
-  anisotropy: number,
+  pictures: { anisotropy: number; maxSide: number },
   onProgress?: (fraction: number) => void,
 ): Chain {
+  const uploader = createUploader(stage.renderer);
   const plans: ChunkPlan[] = [];
   const built = new Map<number, Built>();
   const blocks = new Map<string, number>();
@@ -54,7 +61,7 @@ export function createChain(
   const ready = new Promise<void>((resolve) => {
     markReady = resolve;
   });
-  /** Mazes out of view at the start wait for the ones in view, so their searches and pictures do not compete. */
+  /** The other mazes wait for the first one, so their searches and pictures do not compete with it. */
   const opened = Promise.race([ready, new Promise<void>((resolve) => setTimeout(resolve, OPENING_WAIT_MS))]);
   const settle = () => {
     settled += 1;
@@ -84,17 +91,14 @@ export function createChain(
   };
 
   /**
-   * Twenty frames draw on two lists of twelve, so a maze asks for alpha.2k and
-   * alpha.2k+1. A hall's extra frames add alpha.2k.1, alpha.2k.2, and so on,
-   * with one list to spare for works the mazes before already showed.
+   * A maze draws on lists of twelve: alpha.2k and alpha.2k+1, then alpha.2k.1,
+   * alpha.2k.2, and so on, as many as its frames need with a few to spare.
    */
   const mazeWorks = (k: number): Promise<Work[]> => {
     const chunk = plan(k);
     const names = [`${seed}.${2 * k}`, `${seed}.${2 * k + 1}`];
-    if (chunk.hall) {
-      const needed = Math.ceil(hangSpots(chunk, seed).length / LIST_LENGTH) + 1;
-      for (let extra = 1; names.length < needed; extra++) names.push(`${seed}.${2 * k}.${extra}`);
-    }
+    const needed = Math.ceil((hangSpots(chunk, seed).length + SPARE_WORKS) / LIST_LENGTH);
+    for (let extra = 1; names.length < needed; extra++) names.push(`${seed}.${2 * k}.${extra}`);
     return Promise.all(names.map(worksFor)).then((lists) => {
       const seen = new Set<string>();
       return lists.flat().filter((work) => {
@@ -110,7 +114,7 @@ export function createChain(
     const view = buildChunkView(stage, chunk, hangSpots(chunk, seed));
     const entry: Built = { view, alive: true };
     built.set(k, entry);
-    const tracked = starting && visible(k);
+    const tracked = starting && k === current;
     if (tracked) total += view.frames.length;
     const turn = starting && !tracked ? opened : Promise.resolve();
     const lists = turn.then(() => {
@@ -125,7 +129,9 @@ export function createChain(
         frames: view.frames,
         works: works ?? [],
         avoid,
-        anisotropy,
+        anisotropy: pictures.anisotropy,
+        maxSide: pictures.maxSide,
+        uploader,
         alive: () => entry.alive,
         onSettle: tracked ? settle : undefined,
       });
@@ -139,7 +145,7 @@ export function createChain(
       if (!built.has(k)) build(k);
     }
     for (const [k, entry] of built) {
-      if (k >= current - KEEP_REACH && k <= current + KEEP_REACH) continue;
+      if (k >= current - BUILD_REACH && k <= current + BUILD_REACH) continue;
       entry.alive = false;
       entry.view.dispose();
       built.delete(k);
@@ -177,6 +183,7 @@ export function createChain(
   };
 
   const update = (x: number, z: number) => {
+    uploader.step();
     const bx = Math.floor(Math.floor(x / CELL) / CHUNK);
     const bz = Math.floor(Math.floor(z / CELL) / CHUNK);
     const k = blocks.get(`${bx},${bz}`);

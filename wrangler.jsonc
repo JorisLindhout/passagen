@@ -23,7 +23,7 @@
     "CURATOR": "on",
     "CURATOR_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   },
-  // Optional at runtime. Without it, those two slots go to the Met and Chicago.
+  // Optional at runtime. Without it, the Smithsonian slot goes to Chicago.
   // Set with `wrangler secret put SMITHSONIAN_API_KEY` or .dev.vars locally.
   "secrets": {
     "required": ["SMITHSONIAN_API_KEY"]
